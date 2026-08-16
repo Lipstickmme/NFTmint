@@ -25,7 +25,8 @@
     "auto": "tsx src/cli.ts auto",
     "selector": "tsx src/cli.ts selector",
     "networks": "tsx src/cli.ts networks",
-    "start": "tsx src/cli.ts serve"
+    "start": "tsx src/cli.ts serve",
+    "dev": "tsx src/cli.ts dev"
   },
   "keywords": [
     "nft",

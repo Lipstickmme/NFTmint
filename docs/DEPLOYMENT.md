@@ -1,79 +1,93 @@
-# Deployment — Vercel dashboard + persistent bot
+# Deployment — hosting the bot with a UI on Vercel
 
-## Why this is split across two hosts
+The whole thing runs on Vercel: a browser UI plus serverless API routes that
+preflight, mint, and scan the feed. This is the setup guide.
 
-You asked to keep secrets in Vercel environment variables instead of `.env`.
-That works, and the settings are below — but it matters *which* process runs
-where, for two reasons that are not stylistic:
+## What works on Vercel, and what doesn't
 
-1. **Vercel serverless functions cannot hold a WebSocket open.** They run per
-   request and are then frozen or destroyed. The sequencer feed — the whole
-   basis of the tracker and the earliest mint trigger — is a persistent
-   WebSocket. There is nowhere in a serverless function for that connection to
-   live between requests.
+Worth knowing before you rely on it, because the limits are structural rather
+than fixable:
 
-2. **Cold starts cost 100ms–1s.** On a chain that orders first-come-first-served,
-   that is not a tuning detail, it is the entire race. A cold-started function
-   loses to a warm process every single time.
-
-So the split is:
-
-| Component | Runs on | Holds private keys? |
+| Feature | On Vercel | Why |
 | --- | --- | --- |
-| **Dashboard + API** (`api/`, `public/`) | **Vercel** | **No** |
-| **Tracker** (`nftmint serve`) | Persistent host | No |
-| **Mint bot / autopilot** (`run`, `auto`) | Persistent host | **Yes** |
+| Web UI | ✅ Full | Static page |
+| `/api/status` — chain + balances | ✅ Full | Ordinary request |
+| `/api/preflight` — simulate + gas | ✅ Full | Ordinary request |
+| `/api/mint` — mint now | ✅ Works | Completes inside one invocation |
+| Scheduled mint | ✅ Via Vercel Cron | Cron calls `/api/mint` |
+| `/api/scan` — velocity snapshot | ⚠️ Sampled | Samples a window per request; can't watch continuously |
+| Continuous tracker | ❌ | Needs a WebSocket held open between requests |
+| Autopilot | ❌ | Same — needs a persistent feed |
+| Winning a contested race | ⚠️ Degraded | Cold starts cost 100ms–1s; FCFS ordering makes that decisive |
 
-This is also the safer arrangement, and worth stating plainly: **your private
-keys never go to Vercel.** The internet-facing surface is read-only and cannot
-spend. If you put `PRIVATE_KEYS` in Vercel env vars, every function that
-deploys can sign transactions — and a mistake there is unrecoverable.
+**The honest summary:** Vercel is fine for targeted and scheduled mints, and
+for checking what's hot on demand. For a contested drop where hundreds of bots
+race the same block, a warm process near the sequencer beats a cold-started
+function every time — that's not a code problem, it's what serverless is.
 
-```
-   Vercel (public)              Your host (private)
-   ┌────────────────┐           ┌──────────────────────┐
-   │ public/index   │  HTTPS    │ nftmint serve        │◀── wss:// sequencer feed
-   │ api/collections│──────────▶│  tracker + status API│
-   │ api/health     │  bearer   ├──────────────────────┤
-   └────────────────┘           │ nftmint auto  🔑     │──▶ RPC (mint)
-     no keys                    │ nftmint run   🔑     │
-                                └──────────────────────┘
-```
+If you later want the continuous tracker or autopilot, run `npm run serve` on
+any persistent host and set `TRACKER_UPSTREAM_URL`; the UI picks it up
+automatically. Both can coexist.
 
 ---
 
-## Part 1 — Vercel (dashboard)
+## Setup
 
-### Project settings
+### 1. Project settings
 
 | Setting | Value |
 | --- | --- |
 | Framework Preset | **Other** |
-| Build Command | *(leave default — `vercel.json` sets it)* |
 | Output Directory | `public` |
 | Install Command | `npm install --omit=dev` |
 | Node.js Version | **20.x** or later |
 | Root Directory | `./` |
 
-`vercel.json` already pins these, so in most cases you can accept the defaults
-and only set environment variables.
+`vercel.json` already pins these, so you can usually accept the defaults.
 
-### Environment variables (Settings → Environment Variables)
+### 2. Generate an API token
 
-| Name | Example | Required | Notes |
-| --- | --- | --- | --- |
-| `TRACKER_UPSTREAM_URL` | `https://tracker.yourdomain.com` | **Yes** | Where `nftmint serve` is reachable |
-| `TRACKER_UPSTREAM_TOKEN` | `long-random-string` | Recommended | Must equal `TRACKER_AUTH_TOKEN` on the host |
-| `DASHBOARD_TOKEN` | `another-random-string` | Optional | Token visitors need: `/?token=...` |
-| `PROXY_TIMEOUT_MS` | `8000` | Optional | Upstream timeout |
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
-Mark `TRACKER_UPSTREAM_TOKEN` and `DASHBOARD_TOKEN` as **Sensitive** so they
-are write-only in the dashboard. Apply to Production, Preview, and Development.
+This is what stops anyone who finds your URL from spending your funds. The
+mint endpoints **refuse to run without it** — they return 503 rather than
+defaulting to open.
 
-**Do not set on Vercel:** `PRIVATE_KEYS`, `MINT_*`, `AUTO_*`. They are unused
-there, and setting them only widens what a compromise would expose.
+### 3. Environment variables
 
-### Deploy
+Settings → Environment Variables. Apply to Production, Preview, and
+Development.
+
+**Required:**
+
+| Name | Example | Notes |
+| --- | --- | --- |
+| `API_TOKEN` | *(64-char hex)* | Mark **Sensitive**. Min 16 chars |
+| `PRIVATE_KEYS` | `0xkey1,0xkey2,…` | Mark **Sensitive**. Burner wallets only |
+| `NETWORK` | `testnet` | Switch to `mainnet` when ready |
+| `RPC_URLS` | `https://your-endpoint` | The public RPC is rate limited — get a dedicated one |
+
+**Strongly recommended:**
+
+| Name | Example | Notes |
+| --- | --- | --- |
+| `MAX_MINT_VALUE_ETH` | `0.05` | Hard ceiling per run. Defaults to 0.05 |
+| `MAX_FEE_GWEI` | `0.5` | Fee ceiling |
+| `PRIORITY_FEE_GWEI` | `0` | A tip buys nothing on FCFS |
+
+**Optional defaults for the UI form:**
+`CONTRACT_ADDRESS`, `MINT_FUNCTION`, `MINT_ARGS`, `MINT_PRICE_ETH`,
+`MINT_QUANTITY`, `GAS_LIMIT`, `TX_PER_WALLET`.
+
+Anything set here is a default; the UI overrides it per request, so you don't
+redeploy to mint a different contract.
+
+**Optional, for a persistent tracker:** `TRACKER_UPSTREAM_URL`,
+`TRACKER_UPSTREAM_TOKEN`.
+
+### 4. Deploy
 
 ```bash
 npm i -g vercel
@@ -81,108 +95,115 @@ vercel link
 vercel --prod
 ```
 
-Then open `https://your-app.vercel.app` (add `?token=...` if you set
-`DASHBOARD_TOKEN`).
-
-Generate tokens with:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
+Open the URL, go to **Setup**, paste your `API_TOKEN`. It's stored in your
+browser only and sent as a bearer token.
 
 ---
 
-## Part 2 — The persistent host
+## Security — read this part
 
-Anywhere that runs a long-lived Node process: a VPS, Railway, Fly.io, Render,
-a Docker host, or your own machine. **Pick a region close to the sequencer** —
-on FCFS this is the highest-leverage decision you can make. Measure it:
+Putting `PRIVATE_KEYS` on Vercel means **every deployment of this project can
+sign transactions with your wallets.** That is a real exposure, and worth being
+deliberate about:
 
-```bash
-npm run latency
-```
+- **Burner wallets only.** Fund them with what a mint needs, nothing more.
+- **`API_TOKEN` is the only barrier.** Long and random. Rotate it if it leaks.
+- **`MAX_MINT_VALUE_ETH` bounds the damage** if the token does leak. Keep it at
+  the smallest number that lets your mints through.
+- **Preview deployments inherit env vars.** Anyone who can open a preview URL
+  can reach the API. Restrict env vars to Production if that matters to you.
+- **Never commit `.env`.** It's gitignored; keep it that way.
 
-### Setup
-
-```bash
-git clone https://github.com/Lipstickmme/NFTmint.git
-cd NFTmint
-npm install
-cp .env.example .env    # fill in — this file is gitignored
-```
-
-### Run the tracker (no keys needed)
-
-```bash
-PORT=8080 TRACKER_AUTH_TOKEN=<same-as-vercel> npm run serve
-```
-
-Serves `/api/collections`, `/api/health`, and a local dashboard at `/`.
-Put it behind TLS (Caddy, nginx, or Cloudflare Tunnel) before exposing it —
-`TRACKER_UPSTREAM_URL` should be `https://`.
-
-### Run the bot (keys needed, keep private)
-
-```bash
-npm run track        # watch velocity, send nothing
-npm run auto         # autopilot: mass-mint hot free mints
-npm run run:bot      # targeted mint of one known contract
-```
-
-Keep it alive with systemd, pm2, or a Docker restart policy.
-
-### Environment variables for this host
-
-Everything in `.env.example`. The ones that matter most:
-
-```bash
-NETWORK=mainnet
-RPC_URLS=https://your-dedicated-endpoint     # NOT the public RPC
-PRIVATE_KEYS=0xkey1,0xkey2,...,0xkey10       # burners only
-TRACKER_AUTH_TOKEN=<same value as TRACKER_UPSTREAM_TOKEN on Vercel>
-
-AUTO_FREE_ONLY=true
-AUTO_TOTAL_BUDGET_ETH=0.05
-AUTO_TX_PER_WALLET=1
-MIN_MINTS_IN_WINDOW=25
-MIN_UNIQUE_MINTERS=10
-```
+The request body can only override an allowlisted set of mint fields
+(contract, function, args, price, quantity, gas, dry-run). It cannot change
+`PRIVATE_KEYS`, `RPC_URLS`, or `MAX_MINT_VALUE_ETH` — those come from the
+environment only, and there's a test asserting exactly that.
 
 ---
 
-## If you really want everything on Vercel
+## Scheduled mints with Vercel Cron
 
-It is possible for the *targeted* mint only (`run` with `TRIGGER_MODE=now`),
-via a Vercel Cron hitting a function that mints once. You would set
-`PRIVATE_KEYS` on Vercel and accept the risks above.
+Cron can't send a bearer token, so gate it with Vercel's own `CRON_SECRET`, or
+keep a dedicated endpoint. Add to `vercel.json`:
 
-It will not work for `track`, `serve`, or `auto` — all three need a persistent
-feed connection — and cold starts make it uncompetitive against anyone running
-a warm process. I would not do it, but the constraint is documented so the
-choice is yours rather than a surprise.
+```json
+"crons": [{ "path": "/api/mint", "schedule": "0 15 * * *" }]
+```
+
+Cron granularity is one minute, and a cold start adds a few hundred
+milliseconds — fine for an uncontested drop, not for a race.
+
+---
+
+## Running locally
+
+The same handlers Vercel deploys, over a local server:
+
+```bash
+cp .env.example .env      # fill in
+npm run dev               # http://127.0.0.1:3000
+```
+
+Use this to test before deploying — a broken route fails here rather than in
+production.
+
+---
+
+## Optional: add the continuous tracker
+
+To get the always-on tracker and autopilot, run this on any persistent host
+(VPS, Railway, Fly.io, your own machine — ideally near the sequencer):
+
+```bash
+PORT=8080 TRACKER_AUTH_TOKEN=<random> npm run serve
+```
+
+Put it behind TLS, then on Vercel set:
+
+```bash
+TRACKER_UPSTREAM_URL=https://tracker.yourdomain.com
+TRACKER_UPSTREAM_TOKEN=<same value as TRACKER_AUTH_TOKEN>
+```
+
+`/api/collections` then serves a continuous leaderboard instead of a sampled
+one. `npm run auto` (autopilot) runs on that host too.
 
 ---
 
 ## Verifying a deployment
 
 ```bash
-# Host is up and tracking
-curl -H "Authorization: Bearer $TRACKER_AUTH_TOKEN" \
-     https://tracker.yourdomain.com/api/health
-
-# Vercel can reach the host
+# Public — reports what is configured, without leaking values
 curl https://your-app.vercel.app/api/health
+
+# Authenticated
+curl -H "Authorization: Bearer $API_TOKEN" https://your-app.vercel.app/api/status
 ```
 
-A healthy response looks like:
+Healthy looks like:
 
 ```json
-{ "ok": true, "uptimeSec": 412, "contractsTracked": 37,
-  "feedTxSeen": 20551, "mintsSeen": 1832 }
+{ "ok": true,
+  "configured": { "apiToken": true, "privateKeys": true, "rpcUrls": true,
+                  "network": "testnet", "spendCeilingEth": "0.05" },
+  "problems": [] }
 ```
 
-If `/api/health` on Vercel returns `502 upstream unreachable`, the host is not
-reachable from the internet — check TLS, firewall, and that
-`TRACKER_UPSTREAM_URL` has no typo. `401` means the two tokens disagree.
-`{"error": "TRACKER_UPSTREAM_URL is not set..."}` means the env var did not
-apply to that environment; redeploy after adding it.
+| Symptom | Cause |
+| --- | --- |
+| `503 API_TOKEN is not set` | Env var missing, or not applied to that environment — redeploy after adding |
+| `401 invalid token` | Token in the UI doesn't match `API_TOKEN` |
+| `400 Missing required environment variable …` | That field isn't set in env or the form |
+| `/api/scan` returns `connected: false` | Vercel can't reach the sequencer feed, or nothing is minting |
+| Mint times out | Raise `maxDuration`, or reduce wallets per run |
+
+---
+
+## First run
+
+1. **Setup** tab → paste `API_TOKEN`.
+2. **Status** tab → confirm the chain is reachable and wallets are funded.
+3. **Mint** tab → fill in the contract, keep **Dry run** checked, hit
+   **Preflight**, then **Mint**. Nothing is broadcast.
+4. Uncheck **Dry run** and mint for real — on `testnet` first.
+5. Switch `NETWORK` to `mainnet` only after a full testnet run succeeds.

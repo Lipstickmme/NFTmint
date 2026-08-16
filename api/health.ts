@@ -1,39 +1,51 @@
-import {
-  checkAuth,
-  loadProxyConfig,
-  proxyRequest,
-  ProxyConfigError,
-} from '../src/proxy.js';
+import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
+import { loadProxyConfig, proxyRequest } from '../src/proxy.js';
 
-/** Vercel route: GET /api/health — upstream tracker liveness. */
+/**
+ * GET /api/health — deployment readiness.
+ *
+ * Public, so the UI can tell you what is wrong before you have a token. It
+ * reports only whether things are *configured*, never their values, so an
+ * unauthenticated caller learns nothing exploitable.
+ *
+ * When TRACKER_UPSTREAM_URL points at a persistent tracker, its health is
+ * included too.
+ */
+export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
+  await handleApi(req, res, { methods: ['GET'], publicRoute: true }, async () => {
+    const env = process.env;
+    const configured = {
+      apiToken: Boolean(env.API_TOKEN?.trim()),
+      privateKeys: Boolean(env.PRIVATE_KEYS?.trim()),
+      rpcUrls: Boolean(env.RPC_URLS?.trim()),
+      network: env.NETWORK?.trim() || 'testnet',
+      spendCeilingEth: env.MAX_MINT_VALUE_ETH?.trim() || '0.05',
+      upstreamTracker: Boolean(env.TRACKER_UPSTREAM_URL?.trim()),
+    };
 
-interface Req {
-  headers: Record<string, string | string[] | undefined>;
-}
-interface Res {
-  status: (code: number) => Res;
-  setHeader: (name: string, value: string) => void;
-  json: (body: unknown) => void;
-}
+    const problems: string[] = [];
+    if (!configured.apiToken) {
+      problems.push('API_TOKEN is not set — the mint endpoints will refuse to run.');
+    }
+    if (!configured.privateKeys) {
+      problems.push('PRIVATE_KEYS is not set — minting is unavailable.');
+    }
+    if (!configured.rpcUrls) {
+      problems.push(
+        'RPC_URLS is not set — falling back to the public endpoint, which is rate limited.',
+      );
+    }
 
-export default async function handler(req: Req, res: Res): Promise<void> {
-  res.setHeader('cache-control', 'no-store');
+    let upstream: unknown;
+    if (configured.upstreamTracker) {
+      try {
+        const { body } = await proxyRequest(loadProxyConfig(), '/api/health');
+        upstream = body;
+      } catch {
+        upstream = { error: 'upstream tracker unreachable' };
+      }
+    }
 
-  let config;
-  try {
-    config = loadProxyConfig();
-  } catch (err) {
-    const message = err instanceof ProxyConfigError ? err.message : String(err);
-    res.status(500).json({ ok: false, error: message });
-    return;
-  }
-
-  const authorization = req.headers.authorization;
-  if (!checkAuth(config, typeof authorization === 'string' ? authorization : undefined)) {
-    res.status(401).json({ ok: false, error: 'unauthorized' });
-    return;
-  }
-
-  const { status, body } = await proxyRequest(config, '/api/health');
-  res.status(status).json(body);
+    return { ok: problems.length === 0, configured, problems, upstream };
+  });
 }

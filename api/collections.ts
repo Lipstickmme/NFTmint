@@ -1,46 +1,30 @@
-import {
-  checkAuth,
-  loadProxyConfig,
-  proxyRequest,
-  ProxyConfigError,
-} from '../src/proxy.js';
+import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
+import { loadProxyConfig, proxyRequest } from '../src/proxy.js';
 
 /**
- * Vercel route: GET /api/collections
+ * GET /api/collections — live leaderboard from a persistent tracker.
  *
- * Forwards to the durable tracker process. This function holds no keys and
- * cannot sign anything — by design, the public surface has no ability to spend.
+ * Optional. Only useful when TRACKER_UPSTREAM_URL points at a machine running
+ * `nftmint serve`, which can hold the sequencer feed open continuously. For a
+ * Vercel-only deployment use /api/scan instead, which samples a window inside
+ * a single invocation.
  */
-
-interface Req {
-  url?: string;
-  headers: Record<string, string | string[] | undefined>;
-}
-interface Res {
-  status: (code: number) => Res;
-  setHeader: (name: string, value: string) => void;
-  json: (body: unknown) => void;
-}
-
-export default async function handler(req: Req, res: Res): Promise<void> {
-  res.setHeader('cache-control', 'no-store');
-
-  let config;
-  try {
-    config = loadProxyConfig();
-  } catch (err) {
-    const message = err instanceof ProxyConfigError ? err.message : String(err);
-    res.status(500).json({ error: message });
-    return;
-  }
-
-  const authorization = req.headers.authorization;
-  if (!checkAuth(config, typeof authorization === 'string' ? authorization : undefined)) {
-    res.status(401).json({ error: 'unauthorized' });
-    return;
-  }
-
-  const search = req.url?.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  const { status, body } = await proxyRequest(config, '/api/collections', search);
-  res.status(status).json(body);
+export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
+  await handleApi(req, res, { methods: ['GET'] }, async (_body, query) => {
+    const config = loadProxyConfig();
+    const search = query.toString();
+    const { status, body } = await proxyRequest(
+      config,
+      '/api/collections',
+      search ? `?${search}` : '',
+    );
+    if (status >= 400) {
+      throw new Error(
+        typeof body === 'object' && body !== null && 'error' in body
+          ? String((body as { error: unknown }).error)
+          : `upstream returned ${status}`,
+      );
+    }
+    return body;
+  });
 }

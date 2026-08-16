@@ -30,6 +30,7 @@ Commands:
   feed        Stream the sequencer feed. Optionally filter by contract/selector.
   track       Watch the feed and rank collections by mint velocity. Sends nothing.
   serve       Run the tracker plus an HTTP dashboard/API. Holds no keys.
+  dev         Serve the web UI and API locally (same handlers Vercel deploys).
   auto        Autopilot: track, then mass-mint hot free mints across all wallets.
   selector    Print the 4-byte selector for a function signature.
   networks    Show built-in network parameters.
@@ -407,6 +408,15 @@ async function main(): Promise<void> {
     case 'serve':
       await cmdServe(flags);
       break;
+    case 'dev': {
+      // Same handlers Vercel deploys, over a local server.
+      const { startDevServer } = await import('./devserver.js');
+      await startDevServer(Number(flags.port ?? process.env.PORT ?? 3000));
+      await new Promise(() => {
+        /* until interrupted */
+      });
+      break;
+    }
     case 'auto':
       await cmdAuto();
       break;

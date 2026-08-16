@@ -99,36 +99,49 @@ class ConfigError extends Error {
   }
 }
 
-function req(name: string): string {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === '') {
-    throw new ConfigError(`Missing required environment variable ${name}`);
-  }
-  return raw.trim();
-}
+/**
+ * Build the config readers over an explicit environment.
+ *
+ * Taking the environment as a parameter rather than reading `process.env`
+ * directly is what lets the web UI supply per-request overrides — a serverless
+ * function serves many different mints without a redeploy, and passing a
+ * merged map keeps that path free of shared mutable state between concurrent
+ * invocations.
+ */
+function createEnvReader(env: NodeJS.ProcessEnv) {
+  const opt = (name: string): string | undefined => {
+    const raw = env[name];
+    if (raw === undefined || String(raw).trim() === '') return undefined;
+    return String(raw).trim();
+  };
 
-function opt(name: string): string | undefined {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === '') return undefined;
-  return raw.trim();
-}
+  const req = (name: string): string => {
+    const value = opt(name);
+    if (value === undefined) {
+      throw new ConfigError(`Missing required environment variable ${name}`);
+    }
+    return value;
+  };
 
-function optNumber(name: string, fallback: number): number {
-  const raw = opt(name);
-  if (raw === undefined) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) {
-    throw new ConfigError(`${name} must be a number, got "${raw}"`);
-  }
-  return parsed;
-}
+  const optNumber = (name: string, fallback: number): number => {
+    const raw = opt(name);
+    if (raw === undefined) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+      throw new ConfigError(`${name} must be a number, got "${raw}"`);
+    }
+    return parsed;
+  };
 
-function optBool(name: string, fallback: boolean): boolean {
-  const raw = opt(name)?.toLowerCase();
-  if (raw === undefined) return fallback;
-  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
-  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
-  throw new ConfigError(`${name} must be a boolean, got "${raw}"`);
+  const optBool = (name: string, fallback: boolean): boolean => {
+    const raw = opt(name)?.toLowerCase();
+    if (raw === undefined) return fallback;
+    if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+    if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+    throw new ConfigError(`${name} must be a boolean, got "${raw}"`);
+  };
+
+  return { opt, req, optNumber, optBool };
 }
 
 /** Parse a decimal gwei string into wei. Avoids float error on large values. */
@@ -143,6 +156,34 @@ export function gweiToWei(value: string): bigint {
   }
   const padded = frac.padEnd(9, '0');
   return BigInt(whole) * 1_000_000_000n + BigInt(padded);
+}
+
+/**
+ * Load just the wallet keys and network, without requiring a full mint
+ * configuration.
+ *
+ * Status and balance checks are useful before a contract has been chosen, so
+ * they should not be gated behind CONTRACT_ADDRESS and friends.
+ */
+export function loadWalletKeys(env: NodeJS.ProcessEnv = process.env): {
+  network: NetworkName;
+  chainId: number;
+  rpcUrls: string[];
+  privateKeys: Hex[];
+} {
+  const { opt, req } = createEnvReader(env);
+  const network = parseNetwork(opt('NETWORK') ?? 'testnet');
+  const rpcUrls = (opt('RPC_URLS') ?? defaultRpcFor(network))
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean);
+
+  return {
+    network,
+    chainId: network === 'mainnet' ? 4663 : 46630,
+    rpcUrls,
+    privateKeys: parsePrivateKeys(req('PRIVATE_KEYS')),
+  };
 }
 
 function parsePrivateKeys(raw: string): Hex[] {
@@ -190,7 +231,8 @@ function parseArgs(raw: string | undefined): string[] {
   return trimmed.split(',').map((s) => s.trim());
 }
 
-export function loadConfig(): BotConfig {
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): BotConfig {
+  const { opt, req, optNumber, optBool } = createEnvReader(env);
   const network = parseNetwork(opt('NETWORK') ?? 'testnet');
 
   const rpcUrls = (opt('RPC_URLS') ?? defaultRpcFor(network))
@@ -318,7 +360,7 @@ export function loadConfig(): BotConfig {
  * The tracker and its dashboard are read-only, so they can run somewhere the
  * signing keys are not — a serverless dashboard should never be able to spend.
  */
-export function loadTrackerConfig(): {
+export function loadTrackerConfig(env: NodeJS.ProcessEnv = process.env): {
   network: NetworkName;
   feedUrl: string;
   rpcUrls: string[];
@@ -332,6 +374,7 @@ export function loadTrackerConfig(): {
   evictAfterSec: number;
   extraSelectorsRaw?: string;
 } {
+  const { opt, optNumber, optBool } = createEnvReader(env);
   const network = parseNetwork(opt('NETWORK') ?? 'testnet');
   return {
     network,
@@ -370,7 +413,7 @@ function parseAddressSet(raw: string | undefined, name: string): Set<Address> {
  * The budget fields are required rather than defaulted, because an autopilot
  * with an implicit spending limit is an autopilot whose limit nobody chose.
  */
-export function loadAutopilotConfig(): {
+export function loadAutopilotConfig(env: NodeJS.ProcessEnv = process.env): {
   freeOnly: boolean;
   totalBudgetWei: bigint;
   perCollectionBudgetWei: bigint;
@@ -381,6 +424,7 @@ export function loadAutopilotConfig(): {
   txPerWallet: number;
   dryRun: boolean;
 } {
+  const { opt, optNumber, optBool } = createEnvReader(env);
   const totalBudget = opt('AUTO_TOTAL_BUDGET_ETH');
   if (totalBudget === undefined) {
     throw new ConfigError(

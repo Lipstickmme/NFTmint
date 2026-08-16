@@ -60,8 +60,9 @@ npm run track        # rank live collections by mint velocity — sends nothing
 npm run serve        # tracker + HTTP dashboard/API (holds no keys)
 npm run auto         # autopilot: mass-mint hot free mints across all wallets
 npm run run:bot      # full run: preflight → pre-sign → wait for trigger → broadcast
+npm run dev          # web UI + API locally (same handlers Vercel deploys)
 npm run selector -- "setSaleActive(bool)"   # compute a 4-byte selector
-npm test             # 148 tests
+npm test             # 168 tests
 ```
 
 ---
@@ -237,30 +238,63 @@ value plus worst-case gas, rather than discovering it mid-race.
 
 ---
 
-## Deploying (Vercel + a persistent host)
+## Web UI on Vercel
 
-Full instructions with exact settings: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+The bot runs on Vercel with a browser UI — mint, preflight, scan the feed, and
+check wallet balances, no terminal needed.
 
-The short version — and the reason it's split:
-
-| Component | Runs on | Private keys? |
-| --- | --- | --- |
-| Dashboard + API | **Vercel** | **No** |
-| Tracker (`serve`) | Persistent host | No |
-| Mint bot (`run` / `auto`) | Persistent host | **Yes** |
-
-Vercel serverless can't hold the sequencer-feed WebSocket open, and its
-100ms–1s cold starts are fatal on an FCFS chain. So Vercel hosts the dashboard
-and proxies to a durable tracker process.
-
-That also means **your private keys never go to Vercel** — the internet-facing
-surface is read-only and cannot spend. Vercel needs only:
+Full setup with exact settings: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
 ```bash
-TRACKER_UPSTREAM_URL=https://tracker.yourdomain.com
-TRACKER_UPSTREAM_TOKEN=<shared secret>     # mark Sensitive
-DASHBOARD_TOKEN=<token visitors need>      # mark Sensitive, optional
+npm run dev      # same handlers Vercel deploys, at http://127.0.0.1:3000
+vercel --prod    # deploy
 ```
+
+Four required environment variables:
+
+```bash
+API_TOKEN=<64-char random>    # Sensitive — the mint API refuses to run without it
+PRIVATE_KEYS=0xk1,0xk2,...    # Sensitive — burner wallets only
+NETWORK=testnet
+RPC_URLS=https://your-dedicated-endpoint
+```
+
+| Route | Does |
+| --- | --- |
+| `GET /api/health` | Public. What's configured, without leaking values |
+| `GET /api/status` | Chain reachability, endpoint latency, wallet balances |
+| `POST /api/preflight` | Simulate + gas estimate. Sends nothing |
+| `POST /api/mint` | Pre-sign and broadcast now |
+| `GET /api/scan` | Sample the feed, rank by mint velocity |
+
+### What serverless can and can't do here
+
+Being straight about the limits, since they're structural:
+
+- **Works well** — targeted mints, scheduled mints via Vercel Cron, preflight,
+  balances, on-demand velocity scans.
+- **Sampled, not continuous** — `/api/scan` samples a window per request. A
+  function can't hold the sequencer-feed WebSocket open between requests.
+- **Not available** — the always-on tracker and autopilot need that persistent
+  feed. Run `npm run serve` / `npm run auto` on any persistent host and set
+  `TRACKER_UPSTREAM_URL`; the UI picks it up.
+- **Degraded for contested drops** — cold starts cost 100ms–1s, and on FCFS
+  ordering that decides races. A warm process near the sequencer wins those.
+
+### Security
+
+`PRIVATE_KEYS` on Vercel means every deployment can sign with your wallets.
+Mitigations built in, and worth understanding:
+
+- `API_TOKEN` is **required** — endpoints return 503 rather than defaulting to
+  open, and the token is compared in constant time.
+- `MAX_MINT_VALUE_ETH` caps what any single run can commit (default 0.05).
+- Request bodies may only override an **allowlisted** set of mint fields. They
+  cannot touch `PRIVATE_KEYS`, `RPC_URLS`, or the spend ceiling — there's a
+  test asserting that.
+- Preview deployments inherit env vars; restrict to Production if that matters.
+
+Use burner wallets.
 
 ---
 
@@ -344,12 +378,15 @@ src/
   tracker.ts     Per-contract velocity, unique minters, hot detection
   autopilot.ts   Mass-mint orchestration with budget and safety rails
   server.ts      Tracker HTTP API + self-contained dashboard
-  proxy.ts       Upstream proxy used by the Vercel routes
+  service.ts     Service layer behind the web API (status/preflight/mint/scan)
+  http.ts        Auth, JSON safety, and the shared route wrapper
+  proxy.ts       Upstream proxy for an optional persistent tracker
+  devserver.ts   Local host for the Vercel handlers
   bot.ts         Orchestration
   cli.ts         Command-line entry point
-api/             Vercel serverless routes (read-only, no keys)
-public/          Static dashboard served by Vercel
-test/            148 tests, incl. an end-to-end run against a mock node
+api/             Vercel serverless routes
+public/index.html  The web UI
+test/            168 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```
@@ -358,12 +395,14 @@ docs/DEPLOYMENT.md Vercel + persistent host setup
 
 ## Status and limits
 
-Verified offline: 148 tests pass and typecheck is clean, covering signature
+Verified offline: 168 tests pass and typecheck is clean, covering signature
 recovery, transaction field encoding, nonce allocation across wallets, Nitro
 feed decoding against synthetic frames (including malformed and adversarial
 input), tracker velocity and anti-bot thresholds, autopilot recipient
-rewriting, the dashboard API over real HTTP, the full submit path against a
-real local HTTP server, and an end-to-end bot run against a mock node.
+rewriting, API authentication (including fail-closed behaviour and override
+injection attempts), the dashboard API over real HTTP, the full submit path
+against a real local HTTP server, and end-to-end runs of both the bot and the
+Vercel route handlers against a mock node.
 
 **Not verified against the live chain.** The build environment's network policy
 blocks `*.chain.robinhood.com`, so no code path here has touched Robinhood
