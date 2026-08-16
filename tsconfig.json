@@ -5,7 +5,9 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "dist",
-    "rootDir": "src",
+    // The project spans src/ and api/ — the dev server mounts the same route
+    // handlers Vercel deploys, so both must share one compilation root.
+    "rootDir": ".",
     "strict": true,
     "noUncheckedIndexedAccess": false,
     "noImplicitOverride": true,
@@ -19,6 +21,6 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "api/**/*.ts"],
   "exclude": ["node_modules", "dist", "test"]
 }

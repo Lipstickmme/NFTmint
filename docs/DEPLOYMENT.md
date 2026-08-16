@@ -39,11 +39,23 @@ automatically. Both can coexist.
 | --- | --- |
 | Framework Preset | **Other** |
 | Output Directory | `public` |
-| Install Command | `npm install --omit=dev` |
+| Install Command | *(default — leave blank)* |
 | Node.js Version | **20.x** or later |
 | Root Directory | `./` |
 
 `vercel.json` already pins these, so you can usually accept the defaults.
+
+> **TypeScript must stay on 5.x.** Vercel's `@vercel/node` builder compiles
+> `api/*.ts` using the TypeScript it finds in your `devDependencies`.
+> TypeScript 7 is the new Go-based compiler with a reduced Node API, and the
+> builder crashes on it with
+> `Cannot read properties of undefined (reading 'readFile')`.
+> `typescript` is pinned to `^5.9.3` for this reason — do not bump it to 7
+> until Vercel supports it.
+>
+> Do not set an install command of `npm install --omit=dev` either: the builder
+> needs `typescript` and `@types/*` to compile the routes, so omitting dev
+> dependencies just makes it run a second install to put them back.
 
 ### 2. Generate an API token
 
@@ -196,6 +208,8 @@ Healthy looks like:
 | `400 Missing required environment variable …` | That field isn't set in env or the form |
 | `/api/scan` returns `connected: false` | Vercel can't reach the sequencer feed, or nothing is minting |
 | Mint times out | Raise `maxDuration`, or reduce wallets per run |
+| Build fails: `Cannot read properties of undefined (reading 'readFile')` | TypeScript 7 in `devDependencies`. Pin to `^5.9.3` — see the note above |
+| Build warns about `"engines"` auto-upgrading | Harmless. `>=20` is accurate; pin the version in Vercel project settings if you want it fixed |
 
 ---
 

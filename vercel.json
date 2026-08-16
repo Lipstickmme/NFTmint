@@ -3,7 +3,6 @@
   "framework": null,
   "buildCommand": "echo 'static UI — no build step'",
   "outputDirectory": "public",
-  "installCommand": "npm install --omit=dev",
   "functions": {
     "api/mint.ts": {
       "maxDuration": 60,
