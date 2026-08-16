@@ -8,115 +8,281 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg:#0b0d10; --panel:#12151b; --fg:#e6e9ef; --dim:#8b93a7; --line:#232833;
-    --accent:#5b9dff; --ok:#3ddc97; --warn:#ffb454; --err:#ff6b6b; --hot:#ff8a3d;
-    --radius:8px;
+    --bg:#0b0d10; --panel:#12151b; --panel2:#171b22; --fg:#e6e9ef; --dim:#8b93a7;
+    --line:#232833; --accent:#5b9dff; --ok:#3ddc97; --warn:#ffb454; --err:#ff6b6b;
+    --hot:#ff8a3d; --radius:10px;
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg:#f7f8fa; --panel:#ffffff; --fg:#14171f; --dim:#5d6577; --line:#e3e6ec; }
+    :root { --bg:#f6f7f9; --panel:#fff; --panel2:#f2f4f7; --fg:#14171f; --dim:#5d6577; --line:#e3e6ec; }
   }
   * { box-sizing:border-box; }
-  body {
-    margin:0; background:var(--bg); color:var(--fg);
-    font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;
-    padding:24px; max-width:1080px; margin-inline:auto;
-  }
-  code, .mono, input, select, textarea, td, th { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  body { margin:0 auto; max-width:1120px; background:var(--bg); color:var(--fg);
+         font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif; padding:22px; }
+  code,.mono,input,select,textarea,table { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
 
-  header { margin-bottom:20px; }
-  h1 { font-size:18px; margin:0 0 4px; }
-  h2 { font-size:13px; margin:0 0 14px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
+  h1 { font-size:18px; margin:0 0 3px; }
+  h2 { font-size:12px; margin:0 0 12px; text-transform:uppercase; letter-spacing:.07em; color:var(--dim); }
   .sub { color:var(--dim); font-size:13px; }
+  .hint { color:var(--dim); font-size:12px; margin-top:5px; line-height:1.45; }
 
-  nav { display:flex; gap:4px; margin:20px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  nav button {
-    background:none; border:none; color:var(--dim); padding:9px 14px; cursor:pointer;
-    font-size:13px; border-bottom:2px solid transparent; margin-bottom:-1px;
-  }
+  nav { display:flex; gap:2px; margin:18px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  nav button { background:none; border:none; color:var(--dim); padding:9px 15px; cursor:pointer;
+               font-size:13px; border-bottom:2px solid transparent; margin-bottom:-1px; }
   nav button:hover { color:var(--fg); }
   nav button.active { color:var(--accent); border-bottom-color:var(--accent); }
 
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+           padding:18px; margin-bottom:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; }
 
   label { display:block; font-size:12px; color:var(--dim); margin-bottom:5px; }
-  input, select, textarea {
-    width:100%; padding:8px 10px; background:var(--bg); color:var(--fg);
-    border:1px solid var(--line); border-radius:6px; font-size:13px;
-  }
-  input:focus, select:focus, textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
-  textarea { resize:vertical; min-height:64px; }
-  .check { display:flex; align-items:center; gap:8px; margin-top:22px; }
-  .check input { width:auto; }
-  .check label { margin:0; }
+  input,select,textarea { width:100%; padding:8px 10px; background:var(--bg); color:var(--fg);
+                          border:1px solid var(--line); border-radius:6px; font-size:13px; }
+  textarea { resize:vertical; min-height:56px; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:20px; }
+  .check input { width:auto; } .check label { margin:0; }
 
-  button.btn {
-    padding:9px 16px; border-radius:6px; border:1px solid var(--line);
-    background:var(--bg); color:var(--fg); cursor:pointer; font-size:13px; font-weight:500;
-  }
+  button.btn { padding:9px 16px; border-radius:6px; border:1px solid var(--line);
+               background:var(--bg); color:var(--fg); cursor:pointer; font-size:13px; font-weight:500; }
   button.btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
-  button.btn:disabled { opacity:.5; cursor:not-allowed; }
+  button.btn:disabled { opacity:.45; cursor:not-allowed; }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button.primary:hover:not(:disabled) { filter:brightness(1.1); color:#fff; }
-  button.danger { border-color:var(--err); color:var(--err); }
-  button.danger:hover:not(:disabled) { background:var(--err); color:#fff; }
-  .actions { display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; align-items:center; }
+  button.primary:hover:not(:disabled) { filter:brightness(1.12); color:#fff; }
+  button.go { background:var(--ok); border-color:var(--ok); color:#04231a; }
+  button.stop { background:var(--err); border-color:var(--err); color:#fff; }
+  .actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; align-items:center; }
 
-  .out { margin-top:16px; }
-  pre {
-    background:var(--bg); border:1px solid var(--line); border-radius:6px;
-    padding:12px; overflow-x:auto; font-size:12px; margin:0; white-space:pre-wrap;
-    word-break:break-word;
-  }
-  .msg { padding:10px 12px; border-radius:6px; font-size:13px; margin-bottom:12px; border:1px solid; }
-  .msg.ok  { color:var(--ok);   border-color:var(--ok);   background:color-mix(in srgb, var(--ok) 8%, transparent); }
-  .msg.err { color:var(--err);  border-color:var(--err);  background:color-mix(in srgb, var(--err) 8%, transparent); }
-  .msg.warn{ color:var(--warn); border-color:var(--warn); background:color-mix(in srgb, var(--warn) 8%, transparent); }
+  .msg { padding:10px 12px; border-radius:6px; font-size:13px; margin-bottom:10px; border:1px solid; }
+  .msg.ok{color:var(--ok);border-color:var(--ok)} .msg.err{color:var(--err);border-color:var(--err)}
+  .msg.warn{color:var(--warn);border-color:var(--warn)} .msg.info{color:var(--dim);border-color:var(--line)}
 
-  .wrap { overflow-x:auto; }
+  .wrap { overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
   table { border-collapse:collapse; width:100%; font-size:12.5px; }
-  th,td { text-align:right; padding:7px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
-  th:first-child, td:first-child { text-align:left; }
-  th { color:var(--dim); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  th,td { text-align:right; padding:8px 11px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th:first-child,td:first-child { text-align:left; }
   tbody tr:last-child td { border-bottom:none; }
-  tr.hot td { color:var(--hot); font-weight:600; }
-  .ok-t { color:var(--ok); } .err-t { color:var(--err); } .dim { color:var(--dim); }
+  th { color:var(--dim); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  tbody tr:hover { background:var(--panel2); }
+  .ok-t{color:var(--ok)} .err-t{color:var(--err)} .warn-t{color:var(--warn)} .dim{color:var(--dim)}
   a { color:var(--accent); }
-  .kv { display:flex; justify-content:space-between; gap:16px; padding:5px 0; border-bottom:1px solid var(--line); font-size:13px; }
-  .kv:last-child { border-bottom:none; }
-  .kv span:first-child { color:var(--dim); }
+
+  .badge { display:inline-block; padding:1px 7px; border-radius:20px; font-size:11px; font-weight:600; }
+  .b-live{background:rgba(61,220,151,.16);color:var(--ok)}
+  .b-slow{background:rgba(255,180,84,.16);color:var(--warn)}
+  .b-quiet{background:rgba(139,147,167,.16);color:var(--dim)}
+  .b-pass{background:rgba(61,220,151,.16);color:var(--ok)}
+  .b-fail{background:rgba(255,107,107,.14);color:var(--err)}
+
+  .kv { display:flex; justify-content:space-between; gap:16px; padding:6px 0;
+        border-bottom:1px solid var(--line); font-size:13px; }
+  .kv:last-child{border-bottom:none} .kv span:first-child{color:var(--dim)}
+
+  .bar { height:6px; background:var(--panel2); border-radius:4px; overflow:hidden; margin-top:6px; }
+  .bar > div { height:100%; background:var(--accent); }
+
+  details { margin-top:8px; } summary { cursor:pointer; color:var(--dim); font-size:12px; }
+  details[open] summary { color:var(--fg); }
+  .checks { margin-top:8px; }
+  .chk { display:grid; grid-template-columns:16px 1fr auto; gap:8px; padding:5px 0;
+         font-size:12px; border-bottom:1px solid var(--line); align-items:start; }
+  .chk:last-child{border-bottom:none}
+  .chk .why { color:var(--dim); font-size:11.5px; grid-column:2/4; margin-top:2px; }
+
   .hide { display:none; }
-  .spin::after { content:'…'; animation:dots 1.2s steps(4,end) infinite; }
-  @keyframes dots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
-  footer { color:var(--dim); font-size:12px; margin-top:28px; }
+  .pulse { animation:pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+  .log { max-height:260px; overflow-y:auto; font-size:12px; }
+  .log div { padding:3px 0; border-bottom:1px solid var(--line); }
+  footer { color:var(--dim); font-size:12px; margin-top:24px; }
 </style>
 </head>
 <body>
 
-<header>
-  <h1>NFTmint</h1>
-  <div class="sub">Robinhood Chain · first-come-first-served ordering — latency wins, not gas</div>
-</header>
+<h1>NFTmint</h1>
+<div class="sub">Robinhood Chain · mints are won by arriving first, not by paying more</div>
 
-<div id="healthMsg"></div>
+<div id="healthMsg" style="margin-top:14px"></div>
 
 <nav>
-  <button class="active" data-tab="mint">Mint</button>
-  <button data-tab="scan">Scan</button>
+  <button class="active" data-tab="hunt">Auto-hunt</button>
+  <button data-tab="mint">Manual mint</button>
   <button data-tab="status">Status</button>
   <button data-tab="setup">Setup</button>
 </nav>
 
-<!-- ─── SETUP ─── -->
+<!-- ══════════ AUTO-HUNT ══════════ -->
+<section id="tab-hunt">
+  <div class="panel">
+    <h2>Automatic hunting</h2>
+    <div class="sub">
+      Watches live minting on the chain, judges every collection against the criteria
+      below, and mints the ones that pass — across all your wallets.
+    </div>
+    <div class="hint">
+      Each cycle listens for a fixed window, then decides. Leave <b>Keep hunting</b> on
+      and this page runs cycles back to back for as long as the tab stays open.
+    </div>
+
+    <div class="actions">
+      <button class="btn go" id="btnHunt" onclick="toggleHunt()">Start hunting</button>
+      <button class="btn" id="btnOnce" onclick="huntOnce()">Run one cycle</button>
+      <label class="check" style="margin-top:0">
+        <input type="checkbox" id="keepHunting" checked>
+        <span style="color:var(--dim);font-size:12px">Keep hunting</span>
+      </label>
+      <label class="check" style="margin-top:0">
+        <input type="checkbox" id="huntDry" checked>
+        <span style="color:var(--dim);font-size:12px">Practice mode (never buys)</span>
+      </label>
+      <span id="huntState" class="sub"></span>
+    </div>
+    <div class="hint">
+      <b>Practice mode</b> does everything — watches, judges, signs — but never broadcasts.
+      Run it first so you can see what it <i>would</i> have bought before it spends anything.
+      If the server is set to practice mode, this cannot be overridden from the browser.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>What counts as a good mint</h2>
+    <div class="sub" style="margin-bottom:10px">
+      A collection has to pass <b>every</b> check to be bought. Each one rules out a
+      different way of being wrong.
+    </div>
+    <div id="criteriaOut"><span class="dim">loading…</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>Latest cycle</h2>
+    <div id="huntOut"><span class="dim">No cycle has run yet.</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>Activity log</h2>
+    <div class="log" id="huntLog"><span class="dim">—</span></div>
+  </div>
+</section>
+
+<!-- ══════════ MANUAL MINT ══════════ -->
+<section id="tab-mint" class="hide">
+  <div class="panel">
+    <h2>1 · Which collection</h2>
+    <label for="contract">Contract address</label>
+    <input id="contract" placeholder="0x…" spellcheck="false">
+    <div class="hint">
+      Paste the NFT contract address. Then press Check — it reads the contract and tells
+      you how much supply is left and whether minting is still open.
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="btnInspect" onclick="doInspect()">Check this collection</button>
+      <span id="inspectState" class="sub"></span>
+    </div>
+    <div id="inspectOut" style="margin-top:14px"></div>
+  </div>
+
+  <div class="panel">
+    <h2>2 · How to mint it</h2>
+    <div class="sub" style="margin-bottom:12px">
+      Pick <b>one</b> of these. If the auto-hunt has seen this collection, the calldata is
+      filled in for you automatically and you can ignore both.
+    </div>
+
+    <div class="grid">
+      <div>
+        <label for="mintFunction">Mint function</label>
+        <input id="mintFunction" placeholder="mint(uint256)" spellcheck="false">
+        <div class="hint">
+          The function name and its argument types, exactly as the contract lists it —
+          you can copy this from the contract page on the explorer.
+        </div>
+      </div>
+      <div>
+        <label for="mintArgs">Its arguments</label>
+        <input id="mintArgs" placeholder="1" spellcheck="false">
+        <div class="hint">
+          Comma separated, in order. For <code>mint(uint256)</code> this is just how many
+          to mint. Use <code>$SENDER</code> where the contract wants your wallet address.
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <label for="calldata">…or paste raw calldata</label>
+      <textarea id="calldata" placeholder="0x…" spellcheck="false"></textarea>
+      <div class="hint">
+        <b>What this is:</b> the exact encoded instruction another wallet already sent to
+        mint this collection. It is the most reliable option because it is known to work.
+        Get it from the explorer: open any successful mint transaction on this contract,
+        find <b>Input Data</b>, and copy the raw hex. Overrides the function above.
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>3 · How much</h2>
+    <div class="grid">
+      <div>
+        <label for="priceEth">Price per token (ETH)</label>
+        <input id="priceEth" placeholder="0" inputmode="decimal">
+        <div class="hint">0 for a free mint. Check step 1 — it reads the real price.</div>
+      </div>
+      <div>
+        <label for="quantity">How many per transaction</label>
+        <input id="quantity" type="number" min="1" value="1">
+      </div>
+      <div>
+        <label for="txPerWallet">Transactions per wallet</label>
+        <input id="txPerWallet" type="number" min="1" value="1">
+        <div class="hint">
+          Leave at 1 when the collection allows one mint per wallet — you get one from
+          each wallet you configured, all sent at the same time.
+        </div>
+      </div>
+      <div>
+        <label for="gasLimit">Gas limit</label>
+        <input id="gasLimit" placeholder="leave blank to estimate" inputmode="numeric">
+        <div class="hint">Blank is fine unless the sale has not opened yet.</div>
+      </div>
+      <div class="check">
+        <input id="dryRun" type="checkbox" checked>
+        <label for="dryRun">Practice mode (never buys)</label>
+      </div>
+      <div class="check">
+        <input id="requireSimulation" type="checkbox" checked>
+        <label for="requireSimulation">Stop if a test run fails</label>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="btnPreflight" onclick="doPreflight()">Test it</button>
+      <button class="btn primary" id="btnMint" onclick="doMint()">Mint</button>
+      <span id="mintState" class="sub"></span>
+    </div>
+    <div id="mintOut" style="margin-top:14px"></div>
+  </div>
+</section>
+
+<!-- ══════════ STATUS ══════════ -->
+<section id="tab-status" class="hide">
+  <div class="panel">
+    <h2>Chain &amp; wallets</h2>
+    <div class="actions" style="margin-top:0">
+      <button class="btn primary" id="btnStatus" onclick="doStatus()">Refresh</button>
+      <span id="statusState" class="sub"></span>
+    </div>
+    <div id="statusOut" style="margin-top:14px"></div>
+  </div>
+</section>
+
+<!-- ══════════ SETUP ══════════ -->
 <section id="tab-setup" class="hide">
   <div class="panel">
-    <h2>API token</h2>
-    <div class="sub" style="margin-bottom:14px">
-      The mint endpoints can spend funds, so they require a token. Set
-      <code>API_TOKEN</code> in your Vercel environment variables and paste the same
-      value here. It is kept in this browser only.
+    <h2>Access token</h2>
+    <div class="sub" style="margin-bottom:12px">
+      Minting spends real money, so the server will not act without this. Set
+      <code>API_TOKEN</code> in your Vercel environment variables and paste the same value
+      here — it stays in this browser and is never stored on the server.
     </div>
-    <label for="token">API_TOKEN</label>
     <input id="token" type="password" placeholder="paste your API_TOKEN" autocomplete="off">
     <div class="actions">
       <button class="btn primary" onclick="saveToken()">Save</button>
@@ -128,415 +294,355 @@
   <div class="panel">
     <h2>Deployment</h2>
     <div id="healthOut" class="sub">checking…</div>
+    <details>
+      <summary>What do these mean?</summary>
+      <div class="hint" style="margin-top:8px">
+        <b>apiToken / privateKeys / rpcUrls</b> — whether each is set on the server.
+        All three must be true to mint.<br>
+        <b>network</b> — which chain. <code>mainnet</code> spends real ETH.<br>
+        <b>spendCeilingEth</b> — the hard cap on what one run can commit, no matter what
+        you type into the form.<br>
+        <b>upstreamTracker</b> — <span class="ok-t">false is normal and fine.</span>
+        It is only true if you also run a always-on tracker on a separate machine. Without
+        it, hunting samples the chain each cycle instead of watching non-stop, which works
+        but sees slightly less.
+      </div>
+    </details>
   </div>
 </section>
 
-<!-- ─── MINT ─── -->
-<section id="tab-mint">
-  <div class="panel">
-    <h2>What to mint</h2>
-    <div class="grid">
-      <div>
-        <label for="contract">Contract address</label>
-        <input id="contract" placeholder="0x…" spellcheck="false">
-      </div>
-      <div>
-        <label for="network">Network</label>
-        <select id="network">
-          <option value="testnet">testnet (46630)</option>
-          <option value="mainnet">mainnet (4663)</option>
-        </select>
-      </div>
-      <div>
-        <label for="mintFunction">Mint function</label>
-        <input id="mintFunction" placeholder="mint(uint256)" spellcheck="false">
-      </div>
-      <div>
-        <label for="mintArgs">Arguments (comma separated)</label>
-        <input id="mintArgs" placeholder="1" spellcheck="false">
-      </div>
-      <div>
-        <label for="priceEth">Price per token (ETH)</label>
-        <input id="priceEth" placeholder="0" inputmode="decimal">
-      </div>
-      <div>
-        <label for="quantity">Quantity</label>
-        <input id="quantity" type="number" min="1" value="1">
-      </div>
-    </div>
-
-    <div style="margin-top:14px">
-      <label for="calldata">Raw calldata — overrides the function above (most reliable)</label>
-      <textarea id="calldata" placeholder="0x… copied from a successful mint transaction" spellcheck="false"></textarea>
-    </div>
-  </div>
-
-  <div class="panel">
-    <h2>Execution</h2>
-    <div class="grid">
-      <div>
-        <label for="txPerWallet">Transactions per wallet</label>
-        <input id="txPerWallet" type="number" min="1" value="1">
-      </div>
-      <div>
-        <label for="gasLimit">Gas limit (blank = estimate)</label>
-        <input id="gasLimit" placeholder="250000" inputmode="numeric">
-      </div>
-      <div>
-        <label for="maxFeeGwei">Max fee (gwei)</label>
-        <input id="maxFeeGwei" placeholder="0.5" inputmode="decimal">
-      </div>
-      <div class="check">
-        <input id="dryRun" type="checkbox" checked>
-        <label for="dryRun">Dry run — sign but do not broadcast</label>
-      </div>
-      <div class="check">
-        <input id="requireSimulation" type="checkbox" checked>
-        <label for="requireSimulation">Require simulation to pass</label>
-      </div>
-    </div>
-
-    <div class="sub" style="margin-top:14px">
-      One transaction per wallet across N wallets gives N parallel mints on independent
-      nonces — that is what beats a one-per-wallet limit. Several transactions on a
-      <em>single</em> wallet run in nonce order instead.
-    </div>
-
-    <div class="actions">
-      <button class="btn" id="btnPreflight" onclick="doPreflight()">Preflight</button>
-      <button class="btn primary" id="btnMint" onclick="doMint()">Mint</button>
-      <span id="mintState" class="sub"></span>
-    </div>
-    <div id="mintOut" class="out"></div>
-  </div>
-</section>
-
-<!-- ─── SCAN ─── -->
-<section id="tab-scan" class="hide">
-  <div class="panel">
-    <h2>Mint velocity scan</h2>
-    <div class="sub" style="margin-bottom:14px">
-      Samples the sequencer feed for a fixed window and ranks contracts by mint
-      attempts. A serverless function cannot hold the feed open between requests, so
-      this is a snapshot of right now rather than continuous tracking — run
-      <code>npm run serve</code> on a persistent host for that.
-    </div>
-    <div class="grid">
-      <div>
-        <label for="scanSeconds">Sample window (seconds)</label>
-        <input id="scanSeconds" type="number" min="3" max="55" value="20">
-      </div>
-    </div>
-    <div class="actions">
-      <button class="btn primary" id="btnScan" onclick="doScan()">Scan feed</button>
-      <span id="scanState" class="sub"></span>
-    </div>
-    <div id="scanOut" class="out"></div>
-  </div>
-</section>
-
-<!-- ─── STATUS ─── -->
-<section id="tab-status" class="hide">
-  <div class="panel">
-    <h2>Chain &amp; wallets</h2>
-    <div class="actions" style="margin-top:0">
-      <button class="btn primary" id="btnStatus" onclick="doStatus()">Refresh</button>
-      <span id="statusState" class="sub"></span>
-    </div>
-    <div id="statusOut" class="out"></div>
-  </div>
-</section>
-
-<footer>
-  Mint endpoints are token-authenticated and capped by <code>MAX_MINT_VALUE_ETH</code>.
-  Use burner wallets.
-</footer>
+<footer>Practice mode first. Use burner wallets. Spending is capped by <code>MAX_MINT_VALUE_ETH</code>.</footer>
 
 <script>
 'use strict';
-
 const $ = id => document.getElementById(id);
-const FORM_KEYS = ['contract','network','mintFunction','mintArgs','priceEth','quantity',
-                   'calldata','txPerWallet','gasLimit','maxFeeGwei'];
+const FORM = ['contract','mintFunction','mintArgs','priceEth','quantity','calldata','txPerWallet','gasLimit'];
 const CHECKS = ['dryRun','requireSimulation'];
+let hunting = false, huntTimer = null, cycleCount = 0;
 
-// ── tabs ───────────────────────────────────────────────────────────────────
-document.querySelectorAll('nav button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('section').forEach(s => s.classList.add('hide'));
-    $('tab-' + btn.dataset.tab).classList.remove('hide');
-  });
-});
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  document.querySelectorAll('section').forEach(s => s.classList.add('hide'));
+  $('tab-' + b.dataset.tab).classList.remove('hide');
+}));
 
-// ── token ──────────────────────────────────────────────────────────────────
-function getToken() { return localStorage.getItem('nftmint_token') || ''; }
-function saveToken() {
-  localStorage.setItem('nftmint_token', $('token').value.trim());
-  renderTokenState();
-}
-function clearToken() {
-  localStorage.removeItem('nftmint_token');
-  $('token').value = '';
-  renderTokenState();
-}
-function renderTokenState() {
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const msg = (k,t) => `<div class="msg ${k}">${esc(t)}</div>`;
+const short = a => a ? a.slice(0,8) + '…' + a.slice(-4) : '';
+
+function getToken(){ return localStorage.getItem('nftmint_token') || ''; }
+function saveToken(){ localStorage.setItem('nftmint_token', $('token').value.trim()); renderToken(); loadHealth(); }
+function clearToken(){ localStorage.removeItem('nftmint_token'); $('token').value=''; renderToken(); }
+function renderToken(){
   const t = getToken();
-  $('tokenState').textContent = t ? 'saved (' + t.length + ' chars)' : 'not set';
+  $('tokenState').textContent = t ? `saved (${t.length} chars)` : 'not set';
   $('tokenState').className = t ? 'sub ok-t' : 'sub err-t';
 }
-
-// ── form persistence ───────────────────────────────────────────────────────
-function saveForm() {
-  const data = {};
-  FORM_KEYS.forEach(k => data[k] = $(k).value);
-  CHECKS.forEach(k => data[k] = $(k).checked);
-  localStorage.setItem('nftmint_form', JSON.stringify(data));
+function saveForm(){
+  const d = {}; FORM.forEach(k => d[k] = $(k).value); CHECKS.forEach(k => d[k] = $(k).checked);
+  localStorage.setItem('nftmint_form', JSON.stringify(d));
 }
-function loadForm() {
-  try {
-    const data = JSON.parse(localStorage.getItem('nftmint_form') || '{}');
-    FORM_KEYS.forEach(k => { if (data[k] !== undefined) $(k).value = data[k]; });
-    CHECKS.forEach(k => { if (data[k] !== undefined) $(k).checked = data[k]; });
-  } catch { /* ignore corrupt storage */ }
+function loadForm(){
+  try { const d = JSON.parse(localStorage.getItem('nftmint_form')||'{}');
+    FORM.forEach(k => { if(d[k]!==undefined) $(k).value = d[k]; });
+    CHECKS.forEach(k => { if(d[k]!==undefined) $(k).checked = d[k]; });
+  } catch {}
 }
-[...FORM_KEYS, ...CHECKS].forEach(k => {
-  const el = $(k);
-  if (el) el.addEventListener('change', saveForm);
-});
+[...FORM,...CHECKS].forEach(k => $(k)?.addEventListener('change', saveForm));
 
-// ── api ────────────────────────────────────────────────────────────────────
-async function api(path, options = {}) {
-  const headers = { 'content-type': 'application/json' };
-  const token = getToken();
-  if (token) headers.authorization = 'Bearer ' + token;
-
-  const res = await fetch(path, { ...options, headers });
+async function api(path, options={}) {
+  const headers = {'content-type':'application/json'};
+  const t = getToken(); if (t) headers.authorization = 'Bearer ' + t;
+  const res = await fetch(path, {...options, headers});
   const text = await res.text();
-  let body;
-  try { body = JSON.parse(text); }
-  catch { throw new Error('Server returned non-JSON (HTTP ' + res.status + '): ' + text.slice(0, 200)); }
+  let body; try { body = JSON.parse(text); }
+  catch { throw new Error(`Server returned non-JSON (HTTP ${res.status}): ${text.slice(0,180)}`); }
   if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
   return body;
 }
-
-function formBody() {
-  const body = {};
-  FORM_KEYS.forEach(k => { const v = $(k).value.trim(); if (v) body[k] = v; });
-  CHECKS.forEach(k => body[k] = $(k).checked ? 'true' : 'false');
-  return body;
+function busy(btn, state, on, label){ $(btn).disabled = on; $(state).textContent = on?label:'';
+  $(state).className = on ? 'sub pulse' : 'sub'; }
+function logLine(text, cls){
+  const el = $('huntLog');
+  if (el.querySelector('.dim')) el.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = cls || '';
+  d.textContent = `${new Date().toLocaleTimeString()}  ${text}`;
+  el.prepend(d);
+  while (el.children.length > 80) el.removeChild(el.lastChild);
 }
 
-function msg(kind, text) { return '<div class="msg ' + kind + '">' + esc(text) + '</div>'; }
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, c =>
-    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-}
-function busy(btnId, stateId, on, label) {
-  $(btnId).disabled = on;
-  $(stateId).textContent = on ? label : '';
-  $(stateId).className = on ? 'sub spin' : 'sub';
-}
-
-// ── health ─────────────────────────────────────────────────────────────────
-async function loadHealth() {
+// ── health ────────────────────────────────────────────────────────────────
+async function loadHealth(){
   try {
     const h = await api('/api/health');
-    let html = '';
-    for (const [k, v] of Object.entries(h.configured)) {
+    $('healthOut').innerHTML = Object.entries(h.configured).map(([k,v]) => {
       const good = typeof v === 'boolean' ? v : true;
-      html += '<div class="kv"><span>' + esc(k) + '</span><span class="' +
-              (good ? 'ok-t' : 'err-t') + '">' + esc(String(v)) + '</span></div>';
-    }
-    $('healthOut').innerHTML = html;
-    $('healthMsg').innerHTML = h.problems.length
-      ? msg('warn', h.problems.join('  ·  '))
-      : '';
-  } catch (err) {
-    $('healthOut').innerHTML = msg('err', err.message);
-  }
+      const note = k === 'upstreamTracker' && v === false ? ' <span class="dim">(normal)</span>' : '';
+      const cls = (k === 'upstreamTracker') ? 'dim' : (good ? 'ok-t' : 'err-t');
+      return `<div class="kv"><span>${esc(k)}</span><span class="${cls}">${esc(String(v))}${note}</span></div>`;
+    }).join('');
+    $('healthMsg').innerHTML = h.problems.length ? msg('warn', h.problems.join('  ·  ')) : '';
+  } catch(e){ $('healthOut').innerHTML = msg('err', e.message); }
 }
 
-// ── actions ────────────────────────────────────────────────────────────────
-async function doPreflight() {
-  busy('btnPreflight', 'mintState', true, 'simulating');
-  $('mintOut').innerHTML = '';
+// ── criteria ──────────────────────────────────────────────────────────────
+const CRITERIA_HELP = {
+  minMintsPerMinute: 'How fast people are minting. A collection selling out produces a high sustained rate.',
+  minUniqueMinters: 'How many different wallets are minting. This is the anti-bot check — 300 mints from 4 wallets is one bot, not demand.',
+  minAttemptsInWindow: 'Enough mints inside the recent window to count as a real rush, not a trickle.',
+  maxAgeSec: 'How recently it started. Joining late means the supply is mostly gone.',
+  requireLive: 'Mints must still be landing right now. A gap means it already finished.',
+  maxSelloutSec: 'How long until supply runs out at the current rate. This is the real test of "minting out fast" — speed against unlimited supply is not scarcity.',
+  maxSupplyProgressPct: 'How much is already gone. Past this you will likely lose the race and pay gas for nothing.',
+  freeOnly: 'Only mint collections that cost nothing, so your downside is just gas.',
+  maxPriceEth: 'Most you will pay per mint when free-only is off.',
+  requireSaleOpen: "If the contract says whether its sale is open, it must say open.",
+  skipIfOwned: 'Skip collections you already hold. This is what stops repeat cycles buying the same thing twice.',
+};
+function renderCriteria(c){
+  $('criteriaOut').innerHTML = Object.entries(c).map(([k,v]) =>
+    `<div class="kv"><span>${esc(k)}<div class="hint" style="margin-top:2px;max-width:640px">${esc(CRITERIA_HELP[k]||'')}</div></span>
+     <span class="mono">${esc(String(v))}</span></div>`).join('');
+}
+
+// ── hunting ───────────────────────────────────────────────────────────────
+function toggleHunt(){ hunting ? stopHunt() : startHunt(); }
+function startHunt(){
+  hunting = true;
+  $('btnHunt').textContent = 'Stop hunting';
+  $('btnHunt').className = 'btn stop';
+  logLine('Hunting started.', 'ok-t');
+  huntCycle();
+}
+function stopHunt(){
+  hunting = false;
+  if (huntTimer) { clearTimeout(huntTimer); huntTimer = null; }
+  $('btnHunt').textContent = 'Start hunting';
+  $('btnHunt').className = 'btn go';
+  busy('btnOnce','huntState',false);
+  logLine('Hunting stopped.', 'dim');
+}
+async function huntOnce(){ await huntCycle(true); }
+
+async function huntCycle(single){
+  busy('btnOnce','huntState',true,`cycle ${++cycleCount} — watching the chain…`);
   try {
-    const r = await api('/api/preflight', { method:'POST', body: JSON.stringify(formBody()) });
-    let html = r.ok
-      ? msg('ok', 'Preflight passed — ready to mint.')
-      : msg('warn', 'Preflight completed with issues.');
-    if (!r.simulationOk) {
-      html += msg('warn', 'Mint call reverts right now' +
-        (r.revertReason ? ': ' + r.revertReason : '') +
-        '. Expected if the sale has not opened — set a gas limit and uncheck ' +
-        '"Require simulation" to arm anyway.');
-    }
-    if (!r.withinCeiling) {
-      html += msg('err', 'Worst case ' + r.worstCaseEth + ' ETH exceeds the ' +
-        r.spendCeilingEth + ' ETH ceiling (MAX_MINT_VALUE_ETH).');
-    }
-    html += '<div class="kv"><span>gas limit</span><span>' + esc(r.gasLimit) +
-            ' <span class="dim">(' + esc(r.gasSource) + ')</span></span></div>' +
-            '<div class="kv"><span>worst case</span><span>' + esc(r.worstCaseEth) + ' ETH</span></div>' +
-            '<div class="kv"><span>chain id</span><span>' + esc(r.chainId) + '</span></div>';
-    html += walletTable(r.wallets);
-    r.warnings.forEach(w => html += msg('warn', w));
-    $('mintOut').innerHTML = html;
-  } catch (err) {
-    $('mintOut').innerHTML = msg('err', err.message);
+    const dry = $('huntDry').checked;
+    const r = await api(`/api/hunt?dryRun=${dry}`);
+    renderHunt(r);
+    const bits = [`${r.observed.mintsSeen} mints seen`,
+                  `${r.candidates.length} judged`,
+                  `${r.qualified} qualified`];
+    if (r.mintedCollections) bits.push(`${r.mintedCollections} MINTED`);
+    logLine(bits.join(' · '), r.qualified ? 'ok-t' : '');
+    if (!r.feedConnected) logLine('Could not reach the chain feed this cycle.', 'err-t');
+  } catch(e){
+    $('huntOut').innerHTML = msg('err', e.message);
+    logLine('Error: ' + e.message, 'err-t');
+    if (/token|unauthor/i.test(e.message)) { stopHunt(); return; }
   } finally {
-    busy('btnPreflight', 'mintState', false);
+    busy('btnOnce','huntState',false);
+  }
+  if (!single && hunting && $('keepHunting').checked) {
+    huntTimer = setTimeout(huntCycle, 1500);
+  } else if (!single && hunting) {
+    stopHunt();
   }
 }
 
-async function doMint() {
-  const dry = $('dryRun').checked;
-  if (!dry) {
-    const ok = confirm(
-      'This will broadcast real transactions and spend real funds.\n\n' +
-      'Contract: ' + ($('contract').value || '(from environment)') + '\n' +
-      'Price x quantity: ' + ($('priceEth').value || '0') + ' x ' + $('quantity').value + '\n\n' +
-      'Continue?');
-    if (!ok) return;
+function statusBadge(s){
+  const map = {live:['b-live','minting now'], slowing:['b-slow','slowing'], quiet:['b-quiet','stopped']};
+  const [cls,txt] = map[s] || ['b-quiet', s];
+  return `<span class="badge ${cls}">${txt}</span>`;
+}
+
+function renderHunt(r){
+  let html = '';
+  html += `<div class="kv"><span>watched for</span><span>${r.sampledSeconds}s</span></div>`;
+  html += `<div class="kv"><span>mint attempts seen</span><span>${r.observed.mintsSeen}</span></div>`;
+  html += `<div class="kv"><span>collections judged</span><span>${r.candidates.length}</span></div>`;
+  html += `<div class="kv"><span>passed every check</span><span class="${r.qualified?'ok-t':''}">${r.qualified}</span></div>`;
+  if (r.dryRun) html = msg('info','Practice mode — nothing was bought.') + html;
+
+  if (!r.candidates.length) {
+    html += msg('info', r.note);
+    $('huntOut').innerHTML = html;
+    return;
   }
 
-  busy('btnMint', 'mintState', true, dry ? 'signing' : 'broadcasting');
-  $('mintOut').innerHTML = '';
+  html += '<div class="wrap" style="margin-top:12px"><table><thead><tr>' +
+    '<th>Collection</th><th>Status</th><th>Rate</th><th>Wallets</th>' +
+    '<th>Left</th><th>Sells out in</th><th>Verdict</th></tr></thead><tbody>';
+
+  r.candidates.forEach((c,i) => {
+    const col = c.collection, info = c.info || {};
+    const left = info.soldOut ? '<span class="err-t">sold out</span>'
+      : (info.remaining !== undefined
+          ? `${info.remaining}${info.progressPct!==undefined?` <span class="dim">(${info.progressPct.toFixed(0)}% gone)</span>`:''}`
+          : '<span class="dim">unknown</span>');
+    const sellout = c.evaluation.projectedSelloutSec !== undefined
+      ? fmtDur(c.evaluation.projectedSelloutSec) : '<span class="dim">—</span>';
+    html += `<tr>
+      <td><a href="#" onclick="useContract('${esc(col.contract)}');return false">${esc(short(col.contract))}</a>
+          ${info.name?`<div class="dim" style="font-size:11px">${esc(info.name)}</div>`:''}</td>
+      <td>${statusBadge(col.status)}</td>
+      <td>${col.attemptsPerMinute}/min</td>
+      <td>${col.uniqueMinters}</td>
+      <td>${left}</td>
+      <td>${sellout}</td>
+      <td><span class="badge ${c.evaluation.passed?'b-pass':'b-fail'}">${c.evaluation.passed?'BUY':'skip'}</span></td>
+    </tr>
+    <tr><td colspan="7" style="padding-top:0">
+      <details><summary>${esc(c.evaluation.reason)}</summary>
+        <div class="checks">${c.evaluation.checks.map(k => `
+          <div class="chk">
+            <span class="${k.skipped?'dim':(k.passed?'ok-t':'err-t')}">${k.skipped?'–':(k.passed?'✓':'✗')}</span>
+            <span><b>${esc(k.name)}</b> — ${esc(k.actual)} <span class="dim">(needs ${esc(k.required)})</span></span>
+            <span></span>
+            <span class="why">${esc(k.why)}</span>
+          </div>`).join('')}</div>
+        ${c.minted ? renderMinted(c.minted) : ''}
+      </details>
+    </td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  $('huntOut').innerHTML = html;
+}
+
+function renderMinted(m){
+  if (m.error && !m.attempted) return msg('warn','Not bought: ' + m.error);
+  let h = `<div style="margin-top:10px">` +
+    (m.error ? msg('info', m.error) :
+      msg(m.confirmed ? 'ok' : 'warn', `${m.confirmed} confirmed of ${m.attempted} sent`));
+  if (m.txs?.length) h += m.txs.map(t =>
+    `<div style="font-size:12px"><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.hash.slice(0,18))}…</a>
+     <span class="${t.accepted?'ok-t':'err-t'}">${t.accepted?'accepted':'rejected'}</span></div>`).join('');
+  return h + '</div>';
+}
+function fmtDur(s){
+  if (!isFinite(s)) return '—';
+  if (s < 60) return Math.round(s) + 's';
+  if (s < 3600) return Math.round(s/60) + 'm';
+  return (s/3600).toFixed(1) + 'h';
+}
+function useContract(addr){
+  $('contract').value = addr; saveForm();
+  document.querySelector('nav button[data-tab="mint"]').click();
+  doInspect();
+}
+
+// ── inspect ───────────────────────────────────────────────────────────────
+async function doInspect(){
+  const c = $('contract').value.trim();
+  if (!c) { $('inspectOut').innerHTML = msg('warn','Enter a contract address first.'); return; }
+  busy('btnInspect','inspectState',true,'reading the contract');
   try {
-    const r = await api('/api/mint', { method:'POST', body: JSON.stringify(formBody()) });
-    let html = r.dryRun
-      ? msg('warn', 'Dry run — ' + r.transactions.length + ' transaction(s) signed, nothing broadcast.')
-      : (r.minted > 0
-          ? msg('ok', 'Minted ' + r.minted + ' of ' + r.submitted + '.')
-          : msg('err', 'No mints confirmed. ' + r.failed + ' failed.'));
-
-    html += '<div class="kv"><span>submitted</span><span>' + r.submitted + '</span></div>' +
-            '<div class="kv"><span>accepted</span><span>' + r.accepted + '</span></div>' +
-            '<div class="kv"><span>minted</span><span class="ok-t">' + r.minted + '</span></div>' +
-            '<div class="kv"><span>failed</span><span class="' + (r.failed ? 'err-t' : '') + '">' + r.failed + '</span></div>' +
-            '<div class="kv"><span>max committed</span><span>' + esc(r.maxCommittedEth) + ' ETH</span></div>';
-
-    if (r.transactions.length) {
-      html += '<div class="wrap" style="margin-top:14px"><table><thead><tr>' +
-              '<th>From</th><th>Nonce</th><th>Accepted</th><th>Tx</th></tr></thead><tbody>' +
-              r.transactions.map(t =>
-                '<tr><td>' + esc(t.from.slice(0,10)) + '…</td><td>' + t.nonce + '</td>' +
-                '<td class="' + (t.accepted ? 'ok-t' : 'err-t') + '">' + (t.accepted ? 'yes' : 'no') + '</td>' +
-                '<td><a href="' + esc(t.url) + '" target="_blank" rel="noopener">' +
-                esc(t.hash.slice(0,12)) + '…</a></td></tr>' +
-                (t.error ? '<tr><td colspan="4" class="err-t">' + esc(t.error) + '</td></tr>' : '')
-              ).join('') + '</tbody></table></div>';
+    const r = await api('/api/inspect?contract=' + encodeURIComponent(c));
+    let html = msg(r.soldOut ? 'err' : 'ok', r.summary);
+    if (r.progressPct !== undefined) {
+      html += `<div class="kv"><span>minted</span><span>${esc(r.totalSupply?.value)} of ${esc(r.maxSupply?.value)}</span></div>
+               <div class="bar"><div style="width:${Math.min(r.progressPct,100)}%"></div></div>
+               <div class="hint">${esc(r.remaining)} left to mint</div>`;
     }
-    $('mintOut').innerHTML = html;
-  } catch (err) {
-    $('mintOut').innerHTML = msg('err', err.message);
-  } finally {
-    busy('btnMint', 'mintState', false);
-  }
+    if (r.priceWei) {
+      const eth = (Number(r.priceWei.value)/1e18).toString();
+      html += `<div class="kv"><span>price</span><span>${eth === '0' ? 'free' : eth + ' ETH'}</span></div>`;
+      if ($('priceEth').value === '') { $('priceEth').value = eth; saveForm(); }
+    }
+    if (r.saleOpen) html += `<div class="kv"><span>sale</span><span class="${r.saleOpen.value?'ok-t':'err-t'}">${r.saleOpen.value?'open':'closed'}</span></div>`;
+    if (r.ownedByWallet !== undefined) html += `<div class="kv"><span>you already hold</span><span>${esc(r.ownedByWallet)}</span></div>`;
+    $('inspectOut').innerHTML = html;
+  } catch(e){ $('inspectOut').innerHTML = msg('err', e.message); }
+  finally { busy('btnInspect','inspectState',false); }
 }
 
-async function doScan() {
-  const secs = Number($('scanSeconds').value) || 20;
-  busy('btnScan', 'scanState', true, 'sampling ' + secs + 's');
-  $('scanOut').innerHTML = '';
+// ── manual mint ───────────────────────────────────────────────────────────
+function body(){
+  const b = {}; FORM.forEach(k => { const v = $(k).value.trim(); if (v) b[k]=v; });
+  CHECKS.forEach(k => b[k] = $(k).checked ? 'true':'false');
+  return b;
+}
+async function doPreflight(){
+  busy('btnPreflight','mintState',true,'testing'); $('mintOut').innerHTML='';
   try {
-    const r = await api('/api/scan?seconds=' + secs);
-    let html = r.connected
-      ? msg('ok', 'Sampled ' + r.sampledSeconds + 's · ' + r.stats.feedTxSeen +
-                  ' transactions seen, ' + r.stats.mintsSeen + ' mint attempts.')
-      : msg('err', 'Could not connect to the sequencer feed: ' + r.feedUrl);
-
-    if (r.collections.length) {
-      html += '<div class="wrap"><table><thead><tr>' +
-              '<th>Contract</th><th>In window</th><th>Total</th><th>Free</th><th>Per min</th>' +
-              '</tr></thead><tbody>' +
-              r.collections.map(c =>
-                '<tr class="' + (c.flagged ? 'hot' : '') + '">' +
-                '<td>' + esc(c.contract) + '</td>' +
-                '<td>' + c.attemptsInWindow + '</td>' +
-                '<td>' + c.attempts + '</td>' +
-                '<td class="' + (c.isFree ? 'ok-t' : 'dim') + '">' + (c.isFree ? 'yes' : 'no') + '</td>' +
-                '<td>' + c.attemptsPerMinute + '</td></tr>').join('') +
-              '</tbody></table></div>' +
-              '<div class="sub" style="margin-top:10px">Click a contract to copy it into the Mint tab.</div>';
-    } else if (r.connected) {
-      html += msg('warn', 'No mint activity in this window. Try a longer sample.');
-    }
-    html += '<div class="sub" style="margin-top:10px">' + esc(r.note) + '</div>';
-    $('scanOut').innerHTML = html;
-
-    $('scanOut').querySelectorAll('tbody tr').forEach(row => {
-      row.style.cursor = 'pointer';
-      row.addEventListener('click', () => {
-        $('contract').value = row.cells[0].textContent.trim();
-        saveForm();
-        document.querySelector('nav button[data-tab="mint"]').click();
-      });
-    });
-  } catch (err) {
-    $('scanOut').innerHTML = msg('err', err.message);
-  } finally {
-    busy('btnScan', 'scanState', false);
-  }
+    const r = await api('/api/preflight',{method:'POST',body:JSON.stringify(body())});
+    let h = r.ok ? msg('ok','Looks good — ready to mint.') : msg('warn','Completed with problems.');
+    if (!r.simulationOk) h += msg('warn','The mint would fail right now' + (r.revertReason?`: ${r.revertReason}`:'') +
+      '. That is normal if the sale has not opened — set a gas limit and untick "Stop if a test run fails".');
+    if (!r.withinCeiling) h += msg('err',`Would spend up to ${r.worstCaseEth} ETH, over the ${r.spendCeilingEth} ETH cap.`);
+    h += `<div class="kv"><span>gas limit</span><span>${esc(r.gasLimit)}</span></div>
+          <div class="kv"><span>worst case cost</span><span>${esc(r.worstCaseEth)} ETH</span></div>`;
+    h += walletTable(r.wallets);
+    $('mintOut').innerHTML = h;
+  } catch(e){ $('mintOut').innerHTML = msg('err', e.message); }
+  finally { busy('btnPreflight','mintState',false); }
 }
-
-async function doStatus() {
-  busy('btnStatus', 'statusState', true, 'querying');
-  $('statusOut').innerHTML = '';
+async function doMint(){
+  if (!$('dryRun').checked && !confirm(
+      `This spends real funds.\n\nContract: ${$('contract').value||'(from server settings)'}\n` +
+      `Price x qty: ${$('priceEth').value||'0'} x ${$('quantity').value}\n\nContinue?`)) return;
+  busy('btnMint','mintState',true,$('dryRun').checked?'signing':'minting'); $('mintOut').innerHTML='';
   try {
-    const r = await api('/api/status');
-    let html = '';
-    const mismatch = r.observedChainId && r.observedChainId !== r.chainId;
-    if (mismatch) {
-      html += msg('err', 'Chain mismatch: RPC reports ' + r.observedChainId +
-                          ' but config expects ' + r.chainId + '.');
-    }
-    html += '<div class="kv"><span>network</span><span>' + esc(r.network) + ' (' + r.chainId + ')</span></div>' +
-            '<div class="kv"><span>block</span><span>' + esc(r.blockNumber ?? '—') + '</span></div>' +
-            '<div class="kv"><span>base fee</span><span>' + esc(r.baseFeeWei ?? '—') + ' wei</span></div>' +
-            '<div class="kv"><span>spend ceiling</span><span>' + esc(r.spendCeilingEth) + ' ETH</span></div>';
-
-    html += '<h2 style="margin-top:18px">Endpoints</h2><div class="wrap"><table><thead><tr>' +
-            '<th>URL</th><th>Median RTT</th></tr></thead><tbody>' +
-            r.rpcEndpoints.map(e =>
-              '<tr><td>' + esc(e.url) + '</td><td class="' + (e.error ? 'err-t' : '') + '">' +
-              esc(e.error ? e.error : e.medianRttMs + ' ms') + '</td></tr>').join('') +
-            '</tbody></table></div>';
-
-    if (r.wallets.length) {
-      html += '<h2 style="margin-top:18px">Wallets</h2><div class="wrap"><table><thead><tr>' +
-              '<th>Address</th><th>Balance (ETH)</th></tr></thead><tbody>' +
-              r.wallets.map(w =>
-                '<tr><td>' + esc(w.address) + '</td><td>' + esc(w.balanceEth) + '</td></tr>').join('') +
-              '</tbody></table></div>';
-    }
-    $('statusOut').innerHTML = html;
-  } catch (err) {
-    $('statusOut').innerHTML = msg('err', err.message);
-  } finally {
-    busy('btnStatus', 'statusState', false);
-  }
+    const r = await api('/api/mint',{method:'POST',body:JSON.stringify(body())});
+    let h = r.dryRun ? msg('warn',`Practice mode — ${r.transactions.length} signed, nothing sent.`)
+      : (r.minted > 0 ? msg('ok',`Minted ${r.minted} of ${r.submitted}.`)
+                      : msg('err',`No mints confirmed. ${r.failed} failed.`));
+    h += `<div class="kv"><span>sent</span><span>${r.submitted}</span></div>
+          <div class="kv"><span>minted</span><span class="ok-t">${r.minted}</span></div>
+          <div class="kv"><span>failed</span><span class="${r.failed?'err-t':''}">${r.failed}</span></div>`;
+    if (r.transactions.length) h += '<div class="wrap" style="margin-top:12px"><table><thead><tr>' +
+      '<th>Wallet</th><th>Accepted</th><th>Transaction</th></tr></thead><tbody>' +
+      r.transactions.map(t => `<tr><td>${esc(short(t.from))}</td>
+        <td class="${t.accepted?'ok-t':'err-t'}">${t.accepted?'yes':'no'}</td>
+        <td><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.hash.slice(0,14))}…</a></td></tr>` +
+        (t.error?`<tr><td colspan="3" class="err-t">${esc(t.error)}</td></tr>`:'')).join('') +
+      '</tbody></table></div>';
+    $('mintOut').innerHTML = h;
+  } catch(e){ $('mintOut').innerHTML = msg('err', e.message); }
+  finally { busy('btnMint','mintState',false); }
 }
-
-function walletTable(wallets) {
-  if (!wallets || !wallets.length) return '';
-  return '<div class="wrap" style="margin-top:14px"><table><thead><tr>' +
-    '<th>Wallet</th><th>Balance</th><th>Needs</th><th>OK</th></tr></thead><tbody>' +
-    wallets.map(w =>
-      '<tr><td>' + esc(w.address) + '</td><td>' + esc(w.balanceEth) + '</td>' +
-      '<td>' + esc(w.requiredEth) + '</td>' +
-      '<td class="' + (w.sufficient ? 'ok-t' : 'err-t') + '">' +
-      (w.sufficient ? 'yes' : 'no') + '</td></tr>').join('') +
+function walletTable(w){
+  if (!w?.length) return '';
+  return '<div class="wrap" style="margin-top:12px"><table><thead><tr><th>Wallet</th><th>Balance</th><th>Needs</th><th>OK</th></tr></thead><tbody>' +
+    w.map(x => `<tr><td>${esc(x.address)}</td><td>${esc(x.balanceEth)}</td><td>${esc(x.requiredEth)}</td>
+      <td class="${x.sufficient?'ok-t':'err-t'}">${x.sufficient?'yes':'no'}</td></tr>`).join('') +
     '</tbody></table></div>';
 }
 
-// ── init ───────────────────────────────────────────────────────────────────
+// ── status ────────────────────────────────────────────────────────────────
+async function doStatus(){
+  busy('btnStatus','statusState',true,'checking'); $('statusOut').innerHTML='';
+  try {
+    const r = await api('/api/status');
+    let h = '';
+    if (r.observedChainId && r.observedChainId !== r.chainId)
+      h += msg('err',`Wrong network: the RPC reports chain ${r.observedChainId}, expected ${r.chainId}.`);
+    h += `<div class="kv"><span>network</span><span>${esc(r.network)} (${r.chainId})</span></div>
+          <div class="kv"><span>latest block</span><span>${esc(r.blockNumber ?? '—')}</span></div>
+          <div class="kv"><span>spend cap</span><span>${esc(r.spendCeilingEth)} ETH</span></div>`;
+    h += '<h2 style="margin-top:16px">Connection speed</h2><div class="wrap"><table><tbody>' +
+      r.rpcEndpoints.map(e => `<tr><td>${esc(e.url)}</td><td class="${e.error?'err-t':''}">${esc(e.error||e.medianRttMs+' ms')}</td></tr>`).join('') +
+      '</tbody></table></div><div class="hint">Lower is better. On this chain the fastest connection wins mints.</div>';
+    if (r.wallets.length) h += '<h2 style="margin-top:16px">Wallets</h2><div class="wrap"><table><tbody>' +
+      r.wallets.map(w => `<tr><td>${esc(w.address)}</td><td>${esc(w.balanceEth)} ETH</td></tr>`).join('') +
+      '</tbody></table></div><div class="hint">This must be ETH bridged onto Robinhood Chain — Ethereum mainnet ETH will not show here.</div>';
+    $('statusOut').innerHTML = h;
+  } catch(e){ $('statusOut').innerHTML = msg('err', e.message); }
+  finally { busy('btnStatus','statusState',false); }
+}
+
+// ── init ──────────────────────────────────────────────────────────────────
 $('token').value = getToken();
-renderTokenState();
-loadForm();
-loadHealth();
+renderToken(); loadForm(); loadHealth();
+// Criteria come from /api/status, which is cheap — asking /api/hunt would burn
+// a whole sampling cycle just to render a table.
+api('/api/status').then(r => renderCriteria(r.criteria)).catch(() => {
+  $('criteriaOut').innerHTML = '<span class="dim">Save your access token to load the criteria.</span>';
+});
+window.addEventListener('beforeunload', e => { if (hunting) { e.preventDefault(); e.returnValue=''; } });
 </script>
 </body>
 </html>

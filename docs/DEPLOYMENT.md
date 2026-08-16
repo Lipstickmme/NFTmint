@@ -133,6 +133,26 @@ environment only, and there's a test asserting exactly that.
 
 ---
 
+## Continuous hunting
+
+`vercel.json` registers a cron that calls `/api/hunt` every minute. Each call is
+one complete cycle — watch, judge, mint — so running it on a loop gives
+continuous coverage without any process staying alive.
+
+> **Vercel plan limits matter here.** Cron on the **Hobby** plan runs **once per
+> day**, which is useless for catching mints. Per-minute schedules need
+> **Pro**. If you are on Hobby, use the UI instead: the **Start hunting** button
+> runs cycles back to back from your browser for as long as the tab is open,
+> which needs no cron at all.
+
+Re-buying is prevented on chain rather than in a database: before minting, the
+wallet's `balanceOf` for that contract is checked, and a non-zero balance means
+an earlier cycle already bought it. That makes the loop idempotent with no
+storage to provision or keep in sync.
+
+Cron requests are authenticated separately from the UI — Vercel cannot send
+custom headers, so set `CRON_SECRET` and Vercel passes it automatically.
+
 ## Scheduled mints with Vercel Cron
 
 Cron can't send a bearer token, so gate it with Vercel's own `CRON_SECRET`, or

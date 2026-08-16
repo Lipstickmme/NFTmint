@@ -101,12 +101,37 @@ export interface HotCollection {
   firstSeenAt: number;
 }
 
+/**
+ * How lively a collection is right now.
+ *
+ * The question a user actually has when they see a contract in the list is
+ * "is this still minting?", which raw counts do not answer — a collection with
+ * 400 attempts might have finished ten minutes ago.
+ */
+export type ActivityStatus = 'live' | 'slowing' | 'quiet';
+
+/**
+ * Classify liveness from how long ago the last mint attempt was seen.
+ *
+ * A mint in progress produces attempts continuously, so a gap is the clearest
+ * evidence it has stopped — either sold out or the window closed.
+ */
+export function activityStatus(lastSeenSecAgo: number): ActivityStatus {
+  if (lastSeenSecAgo <= 15) return 'live';
+  if (lastSeenSecAgo <= 90) return 'slowing';
+  return 'quiet';
+}
+
 /** Public snapshot shape, safe to serialize for the dashboard API. */
 export interface TrackedCollection {
   contract: Address;
   firstSeenAt: number;
   lastSeenAt: number;
   ageSec: number;
+  /** Seconds since the last observed mint attempt. */
+  lastSeenSecAgo: number;
+  /** Plain answer to "is this still minting?". */
+  status: ActivityStatus;
   attempts: number;
   freeAttempts: number;
   paidAttempts: number;
@@ -114,8 +139,19 @@ export interface TrackedCollection {
   attemptsInWindow: number;
   attemptsPerMinute: number;
   totalValueWei: string;
+  /** Average ETH attached per observed mint — effectively the mint price. */
+  observedValueWei: string;
   isFree: boolean;
   topSelector?: Hex;
+  /**
+   * Calldata from a transaction that a real minter actually sent.
+   *
+   * This is what spares the user from hand-writing calldata: it is known to
+   * work against this contract right now. The UI offers it as a one-click
+   * fill; `buildAutoMintCall` handles rewriting any recipient address.
+   */
+  sampleCalldata?: Hex;
+  /** True once the tracker's own thresholds flagged this as hot. */
   flagged: boolean;
 }
 
@@ -338,12 +374,17 @@ export class MintTracker extends EventEmitter {
     const rows: TrackedCollection[] = [];
     for (const stats of this.contracts.values()) {
       const ageSec = (now - stats.firstSeenAt) / 1000;
+      const lastSeenSecAgo = (now - stats.lastSeenAt) / 1000;
       const attemptsInWindow = this.attemptsInWindow(stats, now);
+      const topSelector = [...stats.selectors.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+
       rows.push({
         contract: stats.contract,
         firstSeenAt: stats.firstSeenAt,
         lastSeenAt: stats.lastSeenAt,
         ageSec: Number(ageSec.toFixed(1)),
+        lastSeenSecAgo: Number(lastSeenSecAgo.toFixed(1)),
+        status: activityStatus(lastSeenSecAgo),
         attempts: stats.attempts,
         freeAttempts: stats.freeAttempts,
         paidAttempts: stats.paidAttempts,
@@ -351,8 +392,13 @@ export class MintTracker extends EventEmitter {
         attemptsInWindow,
         attemptsPerMinute: Number((stats.attempts / Math.max(ageSec / 60, 1 / 60)).toFixed(1)),
         totalValueWei: stats.totalValueWei.toString(),
+        observedValueWei: (stats.attempts > 0
+          ? stats.totalValueWei / BigInt(stats.attempts)
+          : 0n
+        ).toString(),
         isFree: stats.freeAttempts > stats.paidAttempts,
-        topSelector: [...stats.selectors.entries()].sort((a, b) => b[1] - a[1])[0]?.[0],
+        topSelector,
+        sampleCalldata: topSelector ? stats.sampleCalldata.get(topSelector) : undefined,
         flagged: stats.flagged,
       });
     }

@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import { isAddress, isHex, parseEther, type Address, type Hex } from 'viem';
-import { defaultRpcFor, feedFor, type NetworkName } from './chain.js';
+import {
+  defaultRpcFor,
+  feedFor,
+  sequencerRpcFor,
+  type NetworkName,
+} from './chain.js';
 
 /**
  * Configuration is resolved once at startup and then frozen. Nothing on the
@@ -80,6 +85,14 @@ export interface BotConfig {
   network: NetworkName;
   chainId: number;
   rpcUrls: string[];
+  /**
+   * Broadcast-only endpoints, raced alongside `rpcUrls` at fire time.
+   *
+   * These skip the RPC-provider relay hop and hand the transaction straight to
+   * the sequencer. They are never health-checked or used for reads, because a
+   * submission endpoint is not obliged to serve them.
+   */
+  submitOnlyUrls: string[];
   feedUrl: string;
   privateKeys: Hex[];
   mint: MintCallConfig;
@@ -336,6 +349,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BotConfig {
     network,
     chainId: network === 'mainnet' ? 4663 : 46630,
     rpcUrls,
+    // Defaults to the chain's sequencer. Read from `env` directly rather than
+    // through `opt`, so an explicit empty value disables it — `opt` treats ''
+    // as unset, which would silently re-enable the default.
+    submitOnlyUrls: (env.SEQUENCER_URLS !== undefined
+      ? env.SEQUENCER_URLS
+      : sequencerRpcFor(network)
+    )
+      .split(',')
+      .map((u) => u.trim())
+      .filter((u) => /^https?:\/\//.test(u)),
     feedUrl: opt('FEED_URL') ?? feedFor(network),
     privateKeys: parsePrivateKeys(req('PRIVATE_KEYS')),
     mint: {
@@ -443,6 +466,56 @@ export function loadAutopilotConfig(env: NodeJS.ProcessEnv = process.env): {
     maxCollectionsPerHour: optNumber('AUTO_MAX_COLLECTIONS_PER_HOUR', 20),
     txPerWallet: optNumber('AUTO_TX_PER_WALLET', 1),
     dryRun: optBool('AUTO_DRY_RUN', false),
+  };
+}
+
+/**
+ * Hunt configuration — the criteria that decide what gets bought automatically.
+ *
+ * Defaults are tuned for "a real drop that is minting out fast" rather than
+ * "anything with transactions": see src/criteria.ts for what each signal rules
+ * out.
+ */
+export function loadHuntConfig(env: NodeJS.ProcessEnv = process.env): {
+  windowSec: number;
+  inspectTop: number;
+  maxMintsPerCycle: number;
+  dryRun: boolean;
+  criteria: {
+    minMintsPerMinute: number;
+    minUniqueMinters: number;
+    minAttemptsInWindow: number;
+    maxAgeSec: number;
+    requireLive: boolean;
+    maxSelloutSec: number;
+    maxSupplyProgressPct: number;
+    freeOnly: boolean;
+    maxPriceWei: bigint;
+    requireSaleOpen: boolean;
+    skipIfOwned: boolean;
+  };
+} {
+  const { optNumber, optBool, opt } = createEnvReader(env);
+
+  return {
+    // Leaves room inside a 60s function budget for inspection and minting.
+    windowSec: optNumber('HUNT_WINDOW_SEC', 35),
+    inspectTop: optNumber('HUNT_INSPECT_TOP', 6),
+    maxMintsPerCycle: optNumber('HUNT_MAX_MINTS_PER_CYCLE', 2),
+    dryRun: optBool('HUNT_DRY_RUN', true),
+    criteria: {
+      minMintsPerMinute: optNumber('HUNT_MIN_MINTS_PER_MIN', 30),
+      minUniqueMinters: optNumber('HUNT_MIN_UNIQUE_MINTERS', 8),
+      minAttemptsInWindow: optNumber('HUNT_MIN_ATTEMPTS_IN_WINDOW', 15),
+      maxAgeSec: optNumber('HUNT_MAX_AGE_SEC', 300),
+      requireLive: optBool('HUNT_REQUIRE_LIVE', true),
+      maxSelloutSec: optNumber('HUNT_MAX_SELLOUT_SEC', 900),
+      maxSupplyProgressPct: optNumber('HUNT_MAX_SUPPLY_PROGRESS_PCT', 90),
+      freeOnly: optBool('HUNT_FREE_ONLY', true),
+      maxPriceWei: parseEther(opt('HUNT_MAX_PRICE_ETH') ?? '0'),
+      requireSaleOpen: optBool('HUNT_REQUIRE_SALE_OPEN', true),
+      skipIfOwned: optBool('HUNT_SKIP_IF_OWNED', true),
+    },
   };
 }
 

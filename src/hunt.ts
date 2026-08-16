@@ -1,0 +1,366 @@
+import { formatEther, type Address, type Hex } from 'viem';
+import { loadConfig, loadTrackerConfig, type BotConfig } from './config.js';
+import { RpcClient } from './rpc.js';
+import { FeedConsumer } from './feed.js';
+import { MintTracker, type TrackedCollection } from './tracker.js';
+import { parseExtraSelectors } from './mintdetect.js';
+import { inspectContract, type ContractInfo } from './inspect.js';
+import { evaluate, formatDuration, type Evaluation, type HuntCriteria } from './criteria.js';
+import { buildAutoMintCall } from './autopilot.js';
+import { signOne, type PreparedTx } from './presign.js';
+import { submitAll, waitForReceipts } from './submit.js';
+import { loadWallets, NonceManager, type Wallet } from './wallet.js';
+import { explorerTxUrl } from './chain.js';
+import { errorMessage } from './http.js';
+import { log } from './logger.js';
+
+/**
+ * One hunt cycle: watch, judge, and buy.
+ *
+ * Designed to complete inside a single serverless invocation, so a scheduler
+ * can call it on a loop and get continuous coverage without any process
+ * needing to stay alive between runs. Each cycle is self-contained:
+ *
+ *   1. sample the sequencer feed for a fixed window
+ *   2. cheaply rule out collections that cannot qualify (no network calls)
+ *   3. read supply, price, and sale state from the survivors' contracts
+ *   4. score every candidate against the criteria, keeping the reasoning
+ *   5. mint the ones that pass, across every wallet
+ *
+ * State between cycles is deliberately kept ON CHAIN rather than in a
+ * database. Before minting, the wallet's balance for that contract is checked;
+ * a non-zero balance means a previous cycle already bought it. That makes the
+ * loop idempotent without any storage to provision, lose, or get out of sync.
+ */
+
+export interface HuntConfig {
+  /** Seconds to sample the feed. Must leave room for minting inside the budget. */
+  windowSec: number;
+  /** How many top candidates to spend contract reads on. */
+  inspectTop: number;
+  /** Maximum collections to mint in one cycle. */
+  maxMintsPerCycle: number;
+  /** Report what would happen without broadcasting. */
+  dryRun: boolean;
+  criteria: HuntCriteria;
+}
+
+export interface Candidate {
+  collection: TrackedCollection;
+  info?: ContractInfo;
+  evaluation: Evaluation;
+  minted?: {
+    attempted: number;
+    accepted: number;
+    confirmed: number;
+    txs: Array<{ hash: string; url: string; accepted: boolean }>;
+    error?: string;
+  };
+}
+
+export interface HuntReport {
+  startedAt: string;
+  durationMs: number;
+  sampledSeconds: number;
+  feedConnected: boolean;
+  feedUrl: string;
+  observed: {
+    feedTxSeen: number;
+    mintsSeen: number;
+    contractsTracked: number;
+  };
+  candidates: Candidate[];
+  qualified: number;
+  mintedCollections: number;
+  dryRun: boolean;
+  criteria: HuntCriteria;
+  note: string;
+}
+
+/** Serializable form of the criteria, for the API and UI. */
+export function criteriaForDisplay(c: HuntCriteria): Record<string, unknown> {
+  return {
+    minMintsPerMinute: c.minMintsPerMinute,
+    minUniqueMinters: c.minUniqueMinters,
+    minAttemptsInWindow: c.minAttemptsInWindow,
+    maxAgeSec: c.maxAgeSec,
+    requireLive: c.requireLive,
+    maxSelloutSec: c.maxSelloutSec,
+    maxSupplyProgressPct: c.maxSupplyProgressPct,
+    freeOnly: c.freeOnly,
+    maxPriceEth: formatEther(c.maxPriceWei),
+    requireSaleOpen: c.requireSaleOpen,
+    skipIfOwned: c.skipIfOwned,
+  };
+}
+
+/**
+ * Cheap pre-filter, run before any contract reads.
+ *
+ * Contract inspection costs several RPC round trips per collection, and a busy
+ * feed window can surface dozens. Discarding the obvious misses first keeps a
+ * cycle inside its time budget.
+ */
+function couldQualify(c: TrackedCollection, criteria: HuntCriteria): boolean {
+  if (criteria.requireLive && c.status !== 'live') return false;
+  if (c.ageSec > criteria.maxAgeSec) return false;
+  if (c.attemptsInWindow < criteria.minAttemptsInWindow) return false;
+  if (c.attemptsPerMinute < criteria.minMintsPerMinute) return false;
+  if (c.uniqueMinters < criteria.minUniqueMinters) return false;
+  if (criteria.freeOnly && !c.isFree) return false;
+  return true;
+}
+
+export async function runHuntCycle(
+  hunt: HuntConfig,
+  base: NodeJS.ProcessEnv = process.env,
+): Promise<HuntReport> {
+  const started = performance.now();
+  const startedAt = new Date().toISOString();
+  const trackerCfg = loadTrackerConfig(base);
+
+  // ── 1. Sample the feed ───────────────────────────────────────────────────
+  const tracker = new MintTracker({
+    velocityWindowSec: trackerCfg.velocityWindowSec,
+    minAttempts: trackerCfg.minAttempts,
+    minUniqueMinters: trackerCfg.minUniqueMinters,
+    maxContractAgeSec: trackerCfg.maxContractAgeSec,
+    freeOnly: hunt.criteria.freeOnly,
+    // Unique minters are a hard gate here, so recovery must be on despite the cost.
+    trackUniqueMinters: true,
+    maxContracts: trackerCfg.maxContracts,
+    evictAfterSec: trackerCfg.evictAfterSec,
+    extraSelectors: parseExtraSelectors(trackerCfg.extraSelectorsRaw),
+  });
+
+  const feed = new FeedConsumer({ url: trackerCfg.feedUrl });
+  let feedConnected = false;
+  feed.on('open', () => {
+    feedConnected = true;
+  });
+  feed.on('error', () => {
+    /* the consumer logs and reconnects; sampling continues */
+  });
+  feed.on('tx', (tx, msg) => tracker.ingest(tx, msg?.sequenceNumber));
+  feed.start();
+
+  await new Promise((r) => setTimeout(r, hunt.windowSec * 1000));
+  feed.stop();
+
+  const snapshot = tracker.snapshot(100);
+  const observed = {
+    feedTxSeen: tracker.totalSeen,
+    mintsSeen: tracker.totalMints,
+    contractsTracked: tracker.size(),
+  };
+
+  // ── 2. Pre-filter, then inspect survivors ────────────────────────────────
+  const shortlist = snapshot
+    .filter((c) => couldQualify(c, hunt.criteria))
+    .slice(0, hunt.inspectTop);
+
+  const config = loadConfig({
+    ...base,
+    // loadConfig demands a contract; the real one is chosen per candidate.
+    CONTRACT_ADDRESS: base.CONTRACT_ADDRESS ?? '0x0000000000000000000000000000000000000001',
+    MINT_FUNCTION: base.MINT_FUNCTION ?? 'mint(uint256)',
+  });
+  const clients = [
+    ...config.rpcUrls.map((u) => new RpcClient(u, { maxSockets: 16 })),
+  ];
+  const submitOnly = (config.submitOnlyUrls ?? []).map(
+    (u) => new RpcClient(u, { maxSockets: 16 }),
+  );
+  const primary = clients[0];
+  const wallets = loadWallets(config.privateKeys);
+
+  const candidates: Candidate[] = [];
+  let mintedCollections = 0;
+
+  try {
+    for (const collection of shortlist) {
+      let info: ContractInfo | undefined;
+      try {
+        info = await inspectContract(
+          primary,
+          collection.contract as Address,
+          wallets[0].address,
+        );
+      } catch (err) {
+        log.debug('inspect failed', {
+          contract: collection.contract,
+          error: errorMessage(err),
+        });
+      }
+
+      const evaluation = evaluate(collection, hunt.criteria, info);
+      const candidate: Candidate = { collection, info, evaluation };
+      candidates.push(candidate);
+
+      if (!evaluation.passed) continue;
+      if (mintedCollections >= hunt.maxMintsPerCycle) {
+        candidate.minted = {
+          attempted: 0, accepted: 0, confirmed: 0, txs: [],
+          error: 'per-cycle mint limit reached',
+        };
+        continue;
+      }
+
+      log.info('QUALIFIED', {
+        contract: collection.contract,
+        reason: evaluation.reason,
+        sellout: evaluation.projectedSelloutSec
+          ? formatDuration(evaluation.projectedSelloutSec)
+          : 'unknown',
+      });
+
+      candidate.minted = await mintCandidate({
+        collection, info, config, wallets, primary,
+        submitClients: [...submitOnly, ...clients],
+        dryRun: hunt.dryRun,
+        freeOnly: hunt.criteria.freeOnly,
+      });
+      if (!candidate.minted.error) mintedCollections += 1;
+    }
+  } finally {
+    for (const c of [...clients, ...submitOnly]) c.destroy();
+  }
+
+  const qualified = candidates.filter((c) => c.evaluation.passed).length;
+
+  return {
+    startedAt,
+    durationMs: Math.round(performance.now() - started),
+    sampledSeconds: hunt.windowSec,
+    feedConnected,
+    feedUrl: trackerCfg.feedUrl,
+    observed,
+    candidates,
+    qualified,
+    mintedCollections,
+    dryRun: hunt.dryRun,
+    criteria: hunt.criteria,
+    note: feedConnected
+      ? `Sampled ${hunt.windowSec}s; ${shortlist.length} of ${snapshot.length} collections were worth inspecting.`
+      : 'Could not connect to the sequencer feed — nothing was observed this cycle.',
+  };
+}
+
+interface MintCandidateParams {
+  collection: TrackedCollection;
+  info?: ContractInfo;
+  config: BotConfig;
+  wallets: Wallet[];
+  primary: RpcClient;
+  submitClients: RpcClient[];
+  dryRun: boolean;
+  /** When true, send zero value regardless of what was observed. */
+  freeOnly: boolean;
+}
+
+/** Mint one qualifying collection across every wallet. */
+async function mintCandidate(
+  params: MintCandidateParams,
+): Promise<NonNullable<Candidate['minted']>> {
+  const { collection, config, wallets, primary, submitClients, dryRun, freeOnly } = params;
+  const empty = { attempted: 0, accepted: 0, confirmed: 0, txs: [] };
+
+  const call = buildAutoMintCall(collection.topSelector, collection.sampleCalldata);
+  if (!call) {
+    return {
+      ...empty,
+      error: `no safe mint call could be built for selector ${collection.topSelector ?? 'unknown'}`,
+    };
+  }
+
+  // In free-only mode send nothing, whatever the feed showed. Otherwise pay
+  // what real minters were observed paying.
+  const value = freeOnly ? 0n : BigInt(collection.observedValueWei);
+  const contract = collection.contract as Address;
+
+  // Simulate once before committing every wallet to a revert.
+  try {
+    await primary.call('eth_call', [
+      {
+        from: wallets[0].address,
+        to: contract,
+        data: call.buildFor(wallets[0].address),
+        value: `0x${value.toString(16)}`,
+      },
+      'latest',
+    ]);
+  } catch (err) {
+    return { ...empty, error: `simulation reverted: ${errorMessage(err)}` };
+  }
+
+  let gasLimit = 300_000n;
+  try {
+    const hex = await primary.call<Hex>('eth_estimateGas', [
+      {
+        from: wallets[0].address,
+        to: contract,
+        data: call.buildFor(wallets[0].address),
+        value: `0x${value.toString(16)}`,
+      },
+    ]);
+    gasLimit = (BigInt(hex) * 13n) / 10n;
+  } catch {
+    /* keep the conservative default */
+  }
+
+  const nonces = new NonceManager();
+  await nonces.prime(primary, wallets);
+
+  const prepared: PreparedTx[] = [];
+  for (const wallet of wallets) {
+    prepared.push(
+      await signOne({
+        wallet,
+        nonce: nonces.allocate(wallet.address),
+        gasLimit,
+        config: {
+          ...config,
+          mint: { contract, rawCalldata: call.buildFor(wallet.address), args: [], value },
+        } as BotConfig,
+      }),
+    );
+  }
+
+  if (dryRun) {
+    return {
+      attempted: prepared.length,
+      accepted: 0,
+      confirmed: 0,
+      txs: prepared.map((t) => ({
+        hash: t.hash,
+        url: explorerTxUrl(config.network, t.hash),
+        accepted: false,
+      })),
+      error: 'dry run — not broadcast',
+    };
+  }
+
+  const outcomes = await submitAll(submitClients, prepared);
+  const accepted = outcomes.filter((o) => o.accepted);
+  const receipts = await waitForReceipts(
+    primary,
+    accepted.map((o) => o.tx.hash),
+    30_000,
+  );
+
+  let confirmed = 0;
+  for (const [, receipt] of receipts) {
+    if (receipt && BigInt(receipt.status) === 1n) confirmed += 1;
+  }
+
+  return {
+    attempted: prepared.length,
+    accepted: accepted.length,
+    confirmed,
+    txs: outcomes.map((o) => ({
+      hash: o.tx.hash,
+      url: explorerTxUrl(config.network, o.tx.hash),
+      accepted: o.accepted,
+    })),
+  };
+}

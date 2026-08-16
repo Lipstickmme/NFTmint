@@ -64,6 +64,38 @@ export const SEQUENCER_FEEDS = {
   testnet: 'wss://feed.testnet.chain.robinhood.com',
 } as const;
 
+/**
+ * Direct sequencer submission endpoints.
+ *
+ * An ordinary RPC provider accepts your transaction and relays it onward to
+ * the sequencer. Since the sequencer orders strictly by arrival time, that
+ * extra hop is pure lost position. Submitting here goes straight to the thing
+ * doing the ordering.
+ *
+ * These are broadcast-only in practice: the endpoint exists to accept
+ * `eth_sendRawTransaction`, and it may not serve reads. The bot therefore
+ * treats them as submit-only targets — never health-checked with a read call,
+ * never used for preflight — and always includes them in the broadcast race
+ * alongside the configured RPCs.
+ */
+export const SEQUENCER_RPCS = {
+  mainnet: 'https://sequencer.mainnet.chain.robinhood.com',
+  testnet: 'https://sequencer.testnet.chain.robinhood.com',
+} as const;
+
+export function sequencerRpcFor(network: NetworkName): string {
+  return SEQUENCER_RPCS[network];
+}
+
+/**
+ * Alchemy host per network, for building a dedicated endpoint URL.
+ * Full form: https://<host>/v2/<your-api-key>
+ */
+export const ALCHEMY_HOSTS = {
+  mainnet: 'robinhood-mainnet.g.alchemy.com',
+  testnet: 'robinhood-testnet.g.alchemy.com',
+} as const;
+
 export type NetworkName = 'mainnet' | 'testnet';
 
 export function chainFor(network: NetworkName) {

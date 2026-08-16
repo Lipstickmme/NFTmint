@@ -263,9 +263,38 @@ RPC_URLS=https://your-dedicated-endpoint
 | --- | --- |
 | `GET /api/health` | Public. What's configured, without leaking values |
 | `GET /api/status` | Chain reachability, endpoint latency, wallet balances |
+| `GET /api/inspect` | Read a collection: supply left, price, sale open, already owned |
 | `POST /api/preflight` | Simulate + gas estimate. Sends nothing |
 | `POST /api/mint` | Pre-sign and broadcast now |
 | `GET /api/scan` | Sample the feed, rank by mint velocity |
+| `GET /api/hunt` | One full cycle: watch → judge → mint what qualifies |
+
+### Auto-hunt: what counts as a good mint
+
+`/api/hunt` watches the chain, then applies six checks. A collection must pass
+**all** of them, and the UI shows each one's pass/fail with the numbers — so it
+is never a black box.
+
+| Check | Rules out |
+| --- | --- |
+| **Mint rate** ≥ 30/min | Something barely moving |
+| **Unique minters** ≥ 8 | One bot in a loop. 300 mints from 4 wallets is not demand |
+| **Burst size** ≥ 15 in window | A trickle rather than a rush |
+| **Freshness** ≤ 5 min old | Joining the tail after the good supply is gone |
+| **Still minting** (live) | A drop that already finished — the counts are history |
+| **Sellout runway** ≤ 15 min | **The real test.** Remaining supply ÷ current rate. Fast minting against unlimited supply is not scarcity |
+| **Supply left** ≤ 90% gone | Paying gas to lose a race that's already over |
+
+Plus: free-only by default, sale-open honoured when the contract exposes it,
+and **skip if already owned** — checked on chain, which is what makes a
+repeating hunt safe to loop without a database.
+
+Tune every threshold via `HUNT_*` environment variables. `HUNT_MIN_UNIQUE_MINTERS`
+is the highest-value dial for filtering out junk.
+
+**Start in practice mode** (`HUNT_DRY_RUN=true`, the default). It watches,
+judges, and signs, but never broadcasts — so you can see what it *would* have
+bought before it spends anything.
 
 ### What serverless can and can't do here
 

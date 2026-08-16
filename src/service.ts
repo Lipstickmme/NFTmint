@@ -1,6 +1,7 @@
 import { formatEther, parseEther, type Hex } from 'viem';
 import {
   loadConfig,
+  loadHuntConfig,
   loadTrackerConfig,
   loadWalletKeys,
   type BotConfig,
@@ -14,6 +15,7 @@ import { run } from './bot.js';
 import { FeedConsumer } from './feed.js';
 import { MintTracker, type TrackedCollection } from './tracker.js';
 import { parseExtraSelectors } from './mintdetect.js';
+import { criteriaForDisplay } from './hunt.js';
 import { errorMessage } from './http.js';
 
 /**
@@ -107,6 +109,8 @@ export interface StatusResult {
   wallets: Array<{ address: string; balanceEth: string }>;
   spendCeilingEth: string;
   explorer?: string;
+  /** Auto-hunt thresholds, so the UI can explain them without running a cycle. */
+  criteria: Record<string, unknown>;
 }
 
 /**
@@ -169,6 +173,7 @@ export async function getStatus(env: NodeJS.ProcessEnv = process.env): Promise<S
       wallets,
       spendCeilingEth: formatEther(spendCeilingWei(env)),
       explorer: chain.blockExplorers?.default.url,
+      criteria: criteriaForDisplay(loadHuntConfig(env).criteria),
     };
   } finally {
     for (const client of clients) client.destroy();

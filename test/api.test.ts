@@ -125,6 +125,8 @@ beforeEach(async () => {
     MAX_MINT_VALUE_ETH: '0.05',
     TX_PER_WALLET: '1',
     DRY_RUN: 'false',
+    // Disable the real sequencer endpoint; tests broadcast to the mock only.
+    SEQUENCER_URLS: '',
   });
   delete process.env.TRACKER_UPSTREAM_URL;
   delete process.env.GAS_LIMIT;

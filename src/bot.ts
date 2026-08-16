@@ -68,7 +68,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // Fire at the fastest endpoint first; on a FCFS chain this ordering is the
   // difference between winning and losing.
   healthy.sort((a, b) => a.rtt - b.rtt);
-  const submitClients = healthy.map((h) => h.client);
+
+  // Submit-only endpoints (the sequencer) are added ahead of the RPC providers.
+  // They are not latency-probed, because they need not answer read calls — and
+  // they skip the provider's relay hop, which is the whole point of using them.
+  const submitOnlyClients = (config.submitOnlyUrls ?? []).map(
+    (url) => new RpcClient(url, { timeoutMs: 10_000, maxSockets: 16 }),
+  );
+  for (const client of submitOnlyClients) {
+    clients.push(client);
+    log.info('submit-only endpoint armed', { endpoint: client.endpoint });
+  }
+
+  const submitClients = [...submitOnlyClients, ...healthy.map((h) => h.client)];
 
   try {
     // ── Wallets & preflight ────────────────────────────────────────────────
