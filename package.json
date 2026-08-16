@@ -1,0 +1,57 @@
+{
+  "name": "nftmint",
+  "version": "0.1.0",
+  "description": "NFT mint bot for Robinhood Chain (Arbitrum Orbit L2), tuned for first-come-first-served sequencer ordering",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "nftmint": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "tsx src/cli.ts",
+    "run:bot": "tsx src/cli.ts run",
+    "preflight": "tsx src/cli.ts preflight",
+    "latency": "tsx src/cli.ts latency",
+    "feed": "tsx src/cli.ts feed",
+    "selector": "tsx src/cli.ts selector",
+    "networks": "tsx src/cli.ts networks"
+  },
+  "keywords": [
+    "nft",
+    "mint",
+    "bot",
+    "robinhood-chain",
+    "arbitrum",
+    "orbit",
+    "evm",
+    "web3"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lipstickmme/NFTmint.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Lipstickmme/NFTmint/issues"
+  },
+  "homepage": "https://github.com/Lipstickmme/NFTmint#readme",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "viem": "^2.55.16",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

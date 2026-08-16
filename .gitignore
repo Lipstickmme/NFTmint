@@ -1,0 +1,19 @@
+# Secrets — never commit these.
+.env
+.env.*
+!.env.example
+*.key
+keys.txt
+wallets.json
+
+node_modules/
+dist/
+coverage/
+
+npm-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+
+.DS_Store
+.idea/
+.vscode/
