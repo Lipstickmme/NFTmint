@@ -311,6 +311,97 @@ export function loadConfig(): BotConfig {
   });
 }
 
+/**
+ * Tracker configuration.
+ *
+ * Deliberately separate from `loadConfig`, and it never touches PRIVATE_KEYS.
+ * The tracker and its dashboard are read-only, so they can run somewhere the
+ * signing keys are not — a serverless dashboard should never be able to spend.
+ */
+export function loadTrackerConfig(): {
+  network: NetworkName;
+  feedUrl: string;
+  rpcUrls: string[];
+  velocityWindowSec: number;
+  minAttempts: number;
+  minUniqueMinters: number;
+  maxContractAgeSec: number;
+  freeOnly: boolean;
+  trackUniqueMinters: boolean;
+  maxContracts: number;
+  evictAfterSec: number;
+  extraSelectorsRaw?: string;
+} {
+  const network = parseNetwork(opt('NETWORK') ?? 'testnet');
+  return {
+    network,
+    feedUrl: opt('FEED_URL') ?? feedFor(network),
+    rpcUrls: (opt('RPC_URLS') ?? defaultRpcFor(network))
+      .split(',')
+      .map((u) => u.trim())
+      .filter(Boolean),
+    velocityWindowSec: optNumber('VELOCITY_WINDOW_SEC', 15),
+    minAttempts: optNumber('MIN_MINTS_IN_WINDOW', 25),
+    minUniqueMinters: optNumber('MIN_UNIQUE_MINTERS', 10),
+    maxContractAgeSec: optNumber('MAX_CONTRACT_AGE_SEC', 900),
+    freeOnly: optBool('AUTO_FREE_ONLY', true),
+    trackUniqueMinters: optBool('TRACK_UNIQUE_MINTERS', true),
+    maxContracts: optNumber('TRACKER_MAX_CONTRACTS', 5_000),
+    evictAfterSec: optNumber('TRACKER_EVICT_AFTER_SEC', 3_600),
+    extraSelectorsRaw: opt('EXTRA_MINT_SELECTORS'),
+  };
+}
+
+function parseAddressSet(raw: string | undefined, name: string): Set<Address> {
+  const out = new Set<Address>();
+  if (!raw) return out;
+  for (const entry of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
+    if (!isAddress(entry)) {
+      throw new ConfigError(`${name} contains an invalid address: ${entry}`);
+    }
+    out.add(entry.toLowerCase() as Address);
+  }
+  return out;
+}
+
+/**
+ * Autopilot configuration.
+ *
+ * The budget fields are required rather than defaulted, because an autopilot
+ * with an implicit spending limit is an autopilot whose limit nobody chose.
+ */
+export function loadAutopilotConfig(): {
+  freeOnly: boolean;
+  totalBudgetWei: bigint;
+  perCollectionBudgetWei: bigint;
+  maxGasLimit: bigint;
+  denylist: Set<Address>;
+  allowlist: Set<Address>;
+  maxCollectionsPerHour: number;
+  txPerWallet: number;
+  dryRun: boolean;
+} {
+  const totalBudget = opt('AUTO_TOTAL_BUDGET_ETH');
+  if (totalBudget === undefined) {
+    throw new ConfigError(
+      'AUTO_TOTAL_BUDGET_ETH is required for autopilot. Set the maximum ETH this ' +
+        'process may ever spend, e.g. AUTO_TOTAL_BUDGET_ETH=0.05',
+    );
+  }
+
+  return {
+    freeOnly: optBool('AUTO_FREE_ONLY', true),
+    totalBudgetWei: parseEther(totalBudget),
+    perCollectionBudgetWei: parseEther(opt('AUTO_PER_COLLECTION_BUDGET_ETH') ?? '0.01'),
+    maxGasLimit: BigInt(opt('AUTO_MAX_GAS_LIMIT') ?? '400000'),
+    denylist: parseAddressSet(opt('AUTO_DENYLIST'), 'AUTO_DENYLIST'),
+    allowlist: parseAddressSet(opt('AUTO_ALLOWLIST'), 'AUTO_ALLOWLIST'),
+    maxCollectionsPerHour: optNumber('AUTO_MAX_COLLECTIONS_PER_HOUR', 20),
+    txPerWallet: optNumber('AUTO_TX_PER_WALLET', 1),
+    dryRun: optBool('AUTO_DRY_RUN', false),
+  };
+}
+
 /** Human-readable summary with all secrets omitted. */
 export function describeConfig(cfg: BotConfig): Record<string, unknown> {
   return {

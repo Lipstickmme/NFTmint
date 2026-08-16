@@ -134,6 +134,62 @@ describe('decodeL2Message', () => {
   });
 });
 
+describe('FeedConsumer resilience', () => {
+  it('does not crash the process when the feed errors with no error listener', async () => {
+    // Regression: EventEmitter throws on an unhandled 'error' event, so a bare
+    // emit here took down the whole bot on any transient feed failure — a 403,
+    // a dropped connection, a DNS blip. The consumer must survive and reconnect.
+    const { FeedConsumer } = await import('../src/feed.js');
+    const consumer = new FeedConsumer({
+      url: 'ws://127.0.0.1:1', // nothing listening: connection refused
+      minBackoffMs: 20,
+      maxBackoffMs: 40,
+    });
+
+    expect(() => consumer.start()).not.toThrow();
+    // Long enough for several failed connects and reconnect attempts.
+    await new Promise((r) => setTimeout(r, 250));
+    consumer.stop();
+  });
+
+  it('delivers errors to a listener when one is registered', async () => {
+    const { FeedConsumer } = await import('../src/feed.js');
+    const consumer = new FeedConsumer({
+      url: 'ws://127.0.0.1:1',
+      minBackoffMs: 20,
+      maxBackoffMs: 40,
+    });
+
+    const errors: Error[] = [];
+    consumer.on('error', (err: Error) => errors.push(err));
+    consumer.start();
+    await new Promise((r) => setTimeout(r, 250));
+    consumer.stop();
+
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('stops reconnecting once stopped', async () => {
+    const { FeedConsumer } = await import('../src/feed.js');
+    const consumer = new FeedConsumer({
+      url: 'ws://127.0.0.1:1',
+      minBackoffMs: 20,
+      maxBackoffMs: 40,
+    });
+
+    let closes = 0;
+    consumer.on('close', () => closes += 1);
+    consumer.start();
+    await new Promise((r) => setTimeout(r, 120));
+    consumer.stop();
+
+    const afterStop = closes;
+    await new Promise((r) => setTimeout(r, 200));
+    // At most the one close from stop() itself; no new connection attempts.
+    expect(closes - afterStop).toBeLessThanOrEqual(1);
+  });
+});
+
 describe('parseFeedFrame', () => {
   it('parses a relay frame into messages with sequence numbers', async () => {
     const serialized = await signSample();

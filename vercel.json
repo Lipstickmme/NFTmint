@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "echo 'static dashboard — no build step'",
+  "outputDirectory": "public",
+  "installCommand": "npm install --omit=dev",
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 15,
+      "memory": 256,
+      "includeFiles": "src/**"
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "cache-control", "value": "no-store, max-age=0" },
+        { "key": "x-content-type-options", "value": "nosniff" }
+      ]
+    }
+  ]
+}

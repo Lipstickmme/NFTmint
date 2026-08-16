@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.check.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "cli": "tsx src/cli.ts",
@@ -20,8 +20,12 @@
     "preflight": "tsx src/cli.ts preflight",
     "latency": "tsx src/cli.ts latency",
     "feed": "tsx src/cli.ts feed",
+    "track": "tsx src/cli.ts track",
+    "serve": "tsx src/cli.ts serve",
+    "auto": "tsx src/cli.ts auto",
     "selector": "tsx src/cli.ts selector",
-    "networks": "tsx src/cli.ts networks"
+    "networks": "tsx src/cli.ts networks",
+    "start": "tsx src/cli.ts serve"
   },
   "keywords": [
     "nft",

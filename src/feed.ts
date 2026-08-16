@@ -42,6 +42,14 @@ export interface FeedTx {
   selector?: Hex;
   value: bigint;
   data: Hex;
+  /**
+   * The RLP-encoded signed transaction as it appeared on the feed.
+   *
+   * Retained so the sender can be recovered later if needed. Recovery is ECDSA
+   * work and far too slow to do while decoding a busy feed, so consumers that
+   * want a `from` address do it on their own schedule.
+   */
+  raw: Hex;
 }
 
 export interface FeedMessage {
@@ -93,6 +101,7 @@ function decodeSignedTx(rlp: Uint8Array): FeedTx | undefined {
       value: parsed.value ?? 0n,
       data,
       selector: data.length >= 10 ? (data.slice(0, 10).toLowerCase() as Hex) : undefined,
+      raw: hex,
     };
   } catch {
     // Malformed or an unsupported transaction type; skip rather than throw, so
@@ -210,7 +219,12 @@ export class FeedConsumer extends EventEmitter {
 
     ws.on('error', (err: Error) => {
       log.warn('Sequencer feed error', { error: err.message });
-      this.emit('error', err);
+      // A bare `emit('error')` with no registered listener makes EventEmitter
+      // throw, which would take the whole bot down on a transient feed blip —
+      // exactly when we most need it to stay up and reconnect. Feed errors are
+      // already logged and handled by the reconnect path, so surface them only
+      // to callers who asked.
+      if (this.listenerCount('error') > 0) this.emit('error', err);
     });
 
     ws.on('close', () => {

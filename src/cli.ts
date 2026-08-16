@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 import { formatEther } from 'viem';
-import { describeConfig, loadConfig } from './config.js';
+import {
+  describeConfig,
+  loadAutopilotConfig,
+  loadConfig,
+  loadTrackerConfig,
+} from './config.js';
+import { MintTracker, type HotCollection } from './tracker.js';
+import { parseExtraSelectors } from './mintdetect.js';
+import { runAutopilot } from './autopilot.js';
 import { chainFor, defaultRpcFor, feedFor } from './chain.js';
 import { RpcClient } from './rpc.js';
 import { FeedConsumer } from './feed.js';
@@ -20,6 +28,9 @@ Commands:
   preflight   Validate config, simulate the mint, and report gas. Sends nothing.
   latency     Measure round-trip time to each configured RPC endpoint.
   feed        Stream the sequencer feed. Optionally filter by contract/selector.
+  track       Watch the feed and rank collections by mint velocity. Sends nothing.
+  serve       Run the tracker plus an HTTP dashboard/API. Holds no keys.
+  auto        Autopilot: track, then mass-mint hot free mints across all wallets.
   selector    Print the 4-byte selector for a function signature.
   networks    Show built-in network parameters.
 
@@ -159,6 +170,183 @@ async function cmdFeed(flags: Record<string, string>): Promise<void> {
   });
 }
 
+/**
+ * Read-only tracker. Prints a periodically refreshed leaderboard of what is
+ * being minted hardest right now. Never signs or sends anything, so it is safe
+ * to leave running while you decide.
+ */
+async function cmdTrack(flags: Record<string, string>): Promise<void> {
+  const { FeedConsumer } = await import('./feed.js');
+  const cfg = loadTrackerConfig();
+  const refreshMs = Number(flags.refresh ?? 5_000);
+
+  const tracker = new MintTracker({
+    velocityWindowSec: cfg.velocityWindowSec,
+    minAttempts: cfg.minAttempts,
+    minUniqueMinters: cfg.minUniqueMinters,
+    maxContractAgeSec: cfg.maxContractAgeSec,
+    freeOnly: flags.free === 'true' ? true : cfg.freeOnly,
+    trackUniqueMinters: cfg.trackUniqueMinters,
+    maxContracts: cfg.maxContracts,
+    evictAfterSec: cfg.evictAfterSec,
+    extraSelectors: parseExtraSelectors(cfg.extraSelectorsRaw),
+  });
+
+  log.info('Tracking mint velocity', {
+    feed: cfg.feedUrl,
+    windowSec: cfg.velocityWindowSec,
+    minMintsInWindow: cfg.minAttempts,
+    minUniqueMinters: cfg.minUniqueMinters,
+    freeOnly: tracker.config.freeOnly,
+  });
+
+  const feed = new FeedConsumer({ url: cfg.feedUrl });
+  feed.on('tx', (tx, msg) => tracker.ingest(tx, msg?.sequenceNumber));
+  tracker.on('hot', (hot: HotCollection) => {
+    log.warn('>>> HOT', {
+      contract: hot.contract,
+      inWindow: hot.attemptsInWindow,
+      unique: hot.uniqueMinters,
+      free: hot.isFree,
+      ageSec: hot.ageSec.toFixed(1),
+    });
+  });
+  feed.start();
+
+  const timer = setInterval(() => {
+    const rows = tracker.snapshot(Number(flags.top ?? 15));
+    if (rows.length === 0) return;
+    process.stdout.write(
+      `\n── mint leaderboard ── ${new Date().toISOString()} ── ` +
+        `${JSON.stringify(tracker.stats())}\n`,
+    );
+    process.stdout.write(
+      'contract                                    in-win  total  unique  free  age(s)\n',
+    );
+    for (const r of rows) {
+      process.stdout.write(
+        `${r.contract}  ${String(r.attemptsInWindow).padStart(6)}  ` +
+          `${String(r.attempts).padStart(5)}  ${String(r.uniqueMinters).padStart(6)}  ` +
+          `${(r.isFree ? 'yes' : 'no').padStart(4)}  ${String(r.ageSec).padStart(6)}\n`,
+      );
+    }
+  }, refreshMs);
+
+  process.on('SIGINT', () => {
+    clearInterval(timer);
+    feed.stop();
+    log.info('Tracker stopped', tracker.stats());
+    process.exit(0);
+  });
+
+  await new Promise(() => {
+    /* until interrupted */
+  });
+}
+
+/**
+ * Durable tracker + HTTP status server.
+ *
+ * This is the process a Vercel dashboard points at. It holds the sequencer
+ * feed open — which a serverless function cannot do — and serves the tracker
+ * snapshot over HTTP. It holds no private keys and never signs anything.
+ */
+async function cmdServe(flags: Record<string, string>): Promise<void> {
+  const { FeedConsumer } = await import('./feed.js');
+  const { startStatusServer } = await import('./server.js');
+  const cfg = loadTrackerConfig();
+
+  const tracker = new MintTracker({
+    velocityWindowSec: cfg.velocityWindowSec,
+    minAttempts: cfg.minAttempts,
+    minUniqueMinters: cfg.minUniqueMinters,
+    maxContractAgeSec: cfg.maxContractAgeSec,
+    freeOnly: cfg.freeOnly,
+    trackUniqueMinters: cfg.trackUniqueMinters,
+    maxContracts: cfg.maxContracts,
+    evictAfterSec: cfg.evictAfterSec,
+    extraSelectors: parseExtraSelectors(cfg.extraSelectorsRaw),
+  });
+
+  const feed = new FeedConsumer({ url: cfg.feedUrl });
+  feed.on('tx', (tx, msg) => tracker.ingest(tx, msg?.sequenceNumber));
+  feed.start();
+
+  const port = Number(flags.port ?? process.env.PORT ?? 8080);
+  const server = startStatusServer(tracker, {
+    port,
+    authToken: process.env.TRACKER_AUTH_TOKEN,
+    corsOrigin: process.env.DASHBOARD_ORIGIN,
+  });
+
+  log.info('Serving tracker', {
+    feed: cfg.feedUrl,
+    dashboard: `http://localhost:${port}/`,
+    api: `http://localhost:${port}/api/collections`,
+  });
+
+  process.on('SIGINT', () => {
+    feed.stop();
+    server.close();
+    log.info('Stopped', tracker.stats());
+    process.exit(0);
+  });
+
+  await new Promise(() => {
+    /* until interrupted */
+  });
+}
+
+/**
+ * Autopilot. This one spends money without asking, so it prints exactly what
+ * it is allowed to do before arming, and refuses to start without a budget.
+ */
+async function cmdAuto(): Promise<void> {
+  const botConfig = loadConfig();
+  const auto = loadAutopilotConfig();
+  const tracker = loadTrackerConfig();
+
+  log.warn('AUTOPILOT — this mints contracts nobody has vetted. Use burner wallets.');
+  log.info('Autopilot limits', {
+    freeOnly: auto.freeOnly,
+    totalBudgetEth: formatEther(auto.totalBudgetWei),
+    perCollectionEth: formatEther(auto.perCollectionBudgetWei),
+    maxGasLimit: auto.maxGasLimit,
+    maxCollectionsPerHour: auto.maxCollectionsPerHour,
+    wallets: botConfig.privateKeys.length,
+    txPerWallet: auto.txPerWallet,
+    mintsPerCollection: botConfig.privateKeys.length * auto.txPerWallet,
+    allowlist: auto.allowlist.size || 'any',
+    denylist: auto.denylist.size,
+    dryRun: auto.dryRun,
+  });
+
+  const controller = new AbortController();
+  process.on('SIGINT', () => controller.abort());
+
+  const pilot = await runAutopilot({
+    botConfig,
+    autopilot: {
+      ...auto,
+      denylist: auto.denylist,
+      allowlist: auto.allowlist,
+    },
+    tracker: {
+      velocityWindowSec: tracker.velocityWindowSec,
+      minAttempts: tracker.minAttempts,
+      minUniqueMinters: tracker.minUniqueMinters,
+      maxContractAgeSec: tracker.maxContractAgeSec,
+      trackUniqueMinters: tracker.trackUniqueMinters,
+      maxContracts: tracker.maxContracts,
+      evictAfterSec: tracker.evictAfterSec,
+      extraSelectors: parseExtraSelectors(tracker.extraSelectorsRaw),
+    },
+    signal: controller.signal,
+  });
+
+  log.info('Autopilot stopped', pilot.summary());
+}
+
 function cmdSelector(argv: string[]): void {
   const signature = argv.find((a) => !a.startsWith('--') && a.includes('('));
   if (!signature) {
@@ -212,6 +400,15 @@ async function main(): Promise<void> {
       break;
     case 'feed':
       await cmdFeed(flags);
+      break;
+    case 'track':
+      await cmdTrack(flags);
+      break;
+    case 'serve':
+      await cmdServe(flags);
+      break;
+    case 'auto':
+      await cmdAuto();
       break;
     case 'selector':
       cmdSelector(argv.slice(1));
