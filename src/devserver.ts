@@ -23,6 +23,7 @@ const ROUTES: Record<string, () => Promise<{ default: Handler }>> = {
   '/api/mint': () => import('../api/mint.js') as Promise<{ default: Handler }>,
   '/api/scan': () => import('../api/scan.js') as Promise<{ default: Handler }>,
   '/api/hunt': () => import('../api/hunt.js') as Promise<{ default: Handler }>,
+  '/api/plan': () => import('../api/plan.js') as Promise<{ default: Handler }>,
   '/api/inspect': () => import('../api/inspect.js') as Promise<{ default: Handler }>,
   '/api/collections': () => import('../api/collections.js') as Promise<{ default: Handler }>,
 };

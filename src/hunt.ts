@@ -308,11 +308,44 @@ async function mintCandidate(
     /* keep the conservative default */
   }
 
+  // Only mint from wallets that can actually pay. A wallet short of gas fails
+  // at broadcast, which on a FCFS chain means losing the race while still
+  // holding up the batch — so it is filtered out here rather than discovered
+  // mid-flight. Funded wallets still go ahead; one empty wallet must not stop
+  // the others.
+  const perTxCost = value + gasLimit * config.gas.maxFeePerGas;
+  const funded: Wallet[] = [];
+  const unfunded: string[] = [];
+  await Promise.all(
+    wallets.map(async (wallet) => {
+      try {
+        const hex = await primary.call<Hex>('eth_getBalance', [wallet.address, 'latest']);
+        if (BigInt(hex) >= perTxCost) funded.push(wallet);
+        else unfunded.push(wallet.address);
+      } catch {
+        // Treat an unreadable balance as unfunded rather than risk a revert.
+        unfunded.push(wallet.address);
+      }
+    }),
+  );
+
+  if (funded.length === 0) {
+    return {
+      ...empty,
+      error:
+        `no wallet holds enough ETH for gas (${formatEther(perTxCost)} needed per mint). ` +
+        `Fund them with ETH bridged onto this chain.`,
+    };
+  }
+  if (unfunded.length > 0) {
+    log.warn('skipping unfunded wallets', { count: unfunded.length, needed: formatEther(perTxCost) });
+  }
+
   const nonces = new NonceManager();
-  await nonces.prime(primary, wallets);
+  await nonces.prime(primary, funded);
 
   const prepared: PreparedTx[] = [];
-  for (const wallet of wallets) {
+  for (const wallet of funded) {
     prepared.push(
       await signOne({
         wallet,

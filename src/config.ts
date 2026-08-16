@@ -93,6 +93,14 @@ export interface BotConfig {
    * submission endpoint is not obliged to serve them.
    */
   submitOnlyUrls: string[];
+  /**
+   * Send a throwaway `eth_sendRawTransaction` during warmup.
+   *
+   * Optional and off by default: it only helps if a provider routes writes
+   * through a different handler than reads, and it costs every endpoint a junk
+   * request on each run.
+   */
+  warmSendPath?: boolean;
   feedUrl: string;
   privateKeys: Hex[];
   mint: MintCallConfig;
@@ -359,6 +367,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BotConfig {
       .split(',')
       .map((u) => u.trim())
       .filter((u) => /^https?:\/\//.test(u)),
+    warmSendPath: optBool('WARM_SEND_PATH', false),
     feedUrl: opt('FEED_URL') ?? feedFor(network),
     privateKeys: parsePrivateKeys(req('PRIVATE_KEYS')),
     mint: {

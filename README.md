@@ -263,11 +263,27 @@ RPC_URLS=https://your-dedicated-endpoint
 | --- | --- |
 | `GET /api/health` | Public. What's configured, without leaking values |
 | `GET /api/status` | Chain reachability, endpoint latency, wallet balances |
+| `GET /api/plan` | **Paste anything → how to mint it.** Resolves the address, reads the contract, finds the working mint function |
 | `GET /api/inspect` | Read a collection: supply left, price, sale open, already owned |
 | `POST /api/preflight` | Simulate + gas estimate. Sends nothing |
 | `POST /api/mint` | Pre-sign and broadcast now |
 | `GET /api/scan` | Sample the feed, rank by mint velocity |
 | `GET /api/hunt` | One full cycle: watch → judge → mint what qualifies |
+
+### You don't need to know the ABI
+
+Paste a contract address — or any link containing one — and `/api/plan` works
+the rest out by asking the chain:
+
+- **Price, supply left, sale state** from the contract's own getters, probed
+  across the names NFT contracts actually use.
+- **Which mint function works**, by simulating each common entrypoint and
+  keeping whichever the contract accepts. A successful simulation is real
+  evidence: that call would execute, at that price, from your wallet, now.
+- **Gas**, estimated up front so the mint path never has to.
+
+If a contract is too unusual to detect, the UI opens an advanced panel where
+you can paste raw calldata from a successful mint on the explorer.
 
 ### Auto-hunt: what counts as a good mint
 

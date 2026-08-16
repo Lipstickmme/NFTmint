@@ -174,6 +174,25 @@ export class RpcClient {
     return Promise.all(probes);
   }
 
+  /**
+   * Warm the submission path specifically.
+   *
+   * A read call opens the socket, but nodes often route writes through a
+   * different handler, connection pool, or upstream. Sending a deliberately
+   * invalid `eth_sendRawTransaction` exercises exactly the path a real mint
+   * will take, so the first genuine broadcast is not the one paying to warm it.
+   *
+   * The payload cannot possibly be a valid transaction, so the node rejects it
+   * without side effects — the error is the expected outcome, not a failure.
+   */
+  async warmSendPath(): Promise<void> {
+    try {
+      await this.call('eth_sendRawTransaction', ['0x00']);
+    } catch {
+      /* expected: the point is the round trip, not the result */
+    }
+  }
+
   /** Median round-trip time over `samples` sequential probes. */
   async measureLatency(samples = 5): Promise<number> {
     const times: number[] = [];

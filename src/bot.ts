@@ -82,6 +82,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   const submitClients = [...submitOnlyClients, ...healthy.map((h) => h.client)];
 
+  // Optionally open the write path too. Sockets are already warm from the
+  // latency probe, so this only helps when a provider routes writes through a
+  // separate handler — a speculative gain against the certain cost of sending
+  // every endpoint a junk request on each run. Off unless asked for.
+  if (config.warmSendPath) {
+    await Promise.all(submitClients.map((c) => c.warmSendPath()));
+  }
+
   try {
     // ── Wallets & preflight ────────────────────────────────────────────────
     const wallets = loadWallets(config.privateKeys);
