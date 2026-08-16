@@ -10,6 +10,16 @@ node_modules/
 dist/
 coverage/
 
+# Compiled output must never sit beside the TypeScript sources. Vercel routes
+# api/ by filename, so a stray api/mint.js would shadow api/mint.ts and serve
+# stale code. A misconfigured rootDir emitted these once already.
+api/*.js
+api/*.d.ts
+api/*.js.map
+src/*.js
+src/*.d.ts
+src/*.js.map
+
 npm-debug.log*
 yarn-error.log*
 *.tsbuildinfo
