@@ -276,6 +276,8 @@ async function cmdServe(flags: Record<string, string>): Promise<void> {
   const port = Number(flags.port ?? process.env.PORT ?? 8080);
   const server = startStatusServer(tracker, {
     port,
+    // Loopback by default; set TRACKER_HOST=0.0.0.0 to expose it deliberately.
+    host: flags.host ?? process.env.TRACKER_HOST ?? '127.0.0.1',
     authToken: process.env.TRACKER_AUTH_TOKEN,
     corsOrigin: process.env.DASHBOARD_ORIGIN,
   });

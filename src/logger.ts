@@ -31,10 +31,6 @@ export function setLevel(level: Level): void {
   threshold = LEVEL_ORDER[level];
 }
 
-export function setColor(enabled: boolean): void {
-  useColor = enabled;
-}
-
 function ts(): string {
   return new Date().toISOString();
 }

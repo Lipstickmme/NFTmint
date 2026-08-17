@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { decodeFunctionData, encodeFunctionData, type Abi, type Address, type Hex } from 'viem';
-import { buildAutoMintCall } from '../src/autopilot.js';
+import { buildAutoMintCall } from '../src/mintcall.js';
 import { parseFunction, selectorOf } from '../src/calldata.js';
 
 /**

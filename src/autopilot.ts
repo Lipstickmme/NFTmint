@@ -1,13 +1,5 @@
-import {
-  decodeFunctionData,
-  encodeFunctionData,
-  formatEther,
-  type Abi,
-  type Address,
-  type Hex,
-} from 'viem';
-import { parseFunction } from './calldata.js';
-import { SELECTOR_TO_SIGNATURE } from './mintdetect.js';
+import { formatEther, type Address, type Hex } from 'viem';
+import { buildAutoMintCall, type AutoMintCall } from './mintcall.js';
 import { FeedConsumer } from './feed.js';
 import { MintTracker, type HotCollection, type TrackerConfig } from './tracker.js';
 import { RpcClient } from './rpc.js';
@@ -60,85 +52,7 @@ export interface AutopilotConfig {
   dryRun: boolean;
 }
 
-export const DEFAULT_AUTOPILOT: AutopilotConfig = {
-  freeOnly: true,
-  totalBudgetWei: 0n,
-  perCollectionBudgetWei: 0n,
-  maxGasLimit: 400_000n,
-  denylist: new Set(),
-  allowlist: new Set(),
-  maxCollectionsPerHour: 20,
-  txPerWallet: 1,
-  dryRun: false,
-};
-
-export interface AutoMintCall {
-  /** Calldata template; `$SENDER` positions are re-encoded per wallet. */
-  buildFor: (wallet: Address) => Hex;
-  signature?: string;
-  /** True when the observed calldata was replayed byte for byte. */
-  verbatim: boolean;
-}
-
-/**
- * Turn calldata observed from a real minter into calldata we can safely send.
- *
- * The trap this exists to avoid: `mint(address,uint256)` encodes a recipient.
- * Replaying an observed payload verbatim would mint the NFT to the wallet we
- * copied it from — a silent, total failure that still costs full gas and looks
- * like success in the receipt. So any address argument is re-encoded to the
- * sending wallet.
- *
- * When the selector is not one we can decode, we refuse rather than guess.
- * Sending unknown calldata to an unaudited contract is how wallets get drained.
- */
-export function buildAutoMintCall(
-  selector: Hex | undefined,
-  observed: Hex | undefined,
-): AutoMintCall | undefined {
-  if (!selector || !observed) return undefined;
-
-  const signature = SELECTOR_TO_SIGNATURE.get(selector.toLowerCase() as Hex);
-  if (!signature) return undefined;
-
-  let fn: ReturnType<typeof parseFunction>;
-  try {
-    fn = parseFunction(signature);
-  } catch {
-    return undefined;
-  }
-
-  const hasAddressArg = fn.inputs.some((i) => i.type === 'address');
-
-  // No recipient to rewrite: the observed payload is safe to reuse exactly.
-  if (!hasAddressArg) {
-    return { buildFor: () => observed, signature, verbatim: true };
-  }
-
-  // Decode the observed arguments so we keep the quantity and any extra
-  // parameters a real minter used, and swap only the address positions.
-  let decodedArgs: readonly unknown[];
-  try {
-    const decoded = decodeFunctionData({ abi: [fn] as Abi, data: observed });
-    decodedArgs = (decoded.args ?? []) as readonly unknown[];
-  } catch {
-    return undefined;
-  }
-  if (decodedArgs.length !== fn.inputs.length) return undefined;
-
-  return {
-    signature,
-    verbatim: false,
-    buildFor: (wallet: Address): Hex =>
-      encodeFunctionData({
-        abi: [fn] as Abi,
-        functionName: fn.name,
-        args: fn.inputs.map((input, i) =>
-          input.type === 'address' ? wallet : decodedArgs[i],
-        ),
-      }),
-  };
-}
+export { buildAutoMintCall, type AutoMintCall };
 
 export interface AutopilotResult {
   contract: Address;

@@ -87,14 +87,6 @@ export function sequencerRpcFor(network: NetworkName): string {
   return SEQUENCER_RPCS[network];
 }
 
-/**
- * Alchemy host per network, for building a dedicated endpoint URL.
- * Full form: https://<host>/v2/<your-api-key>
- */
-export const ALCHEMY_HOSTS = {
-  mainnet: 'robinhood-mainnet.g.alchemy.com',
-  testnet: 'robinhood-testnet.g.alchemy.com',
-} as const;
 
 export type NetworkName = 'mainnet' | 'testnet';
 

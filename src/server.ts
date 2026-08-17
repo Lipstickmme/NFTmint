@@ -96,11 +96,23 @@ export function startStatusServer(
     }
   });
 
-  server.listen(options.port, options.host ?? '0.0.0.0', () => {
+  // Bind loopback unless told otherwise. Reaching this from a Vercel dashboard
+  // needs a public bind, but that has to be a deliberate choice rather than
+  // something a local `npm run serve` does by accident.
+  const host = options.host ?? '127.0.0.1';
+  const isPublic = host === '0.0.0.0' || host === '::';
+
+  server.listen(options.port, host, () => {
     log.info('Status server listening', {
-      url: `http://${options.host ?? '0.0.0.0'}:${options.port}`,
+      url: `http://${host}:${options.port}`,
       authRequired: options.authToken !== undefined,
     });
+    if (isPublic && options.authToken === undefined) {
+      log.warn(
+        'This server is reachable from the network with NO token. Anyone who finds ' +
+          'it can read your tracker data. Set TRACKER_AUTH_TOKEN, or bind to 127.0.0.1.',
+      );
+    }
   });
 
   return server;

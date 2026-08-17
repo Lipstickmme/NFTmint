@@ -6,7 +6,7 @@ import { MintTracker, type TrackedCollection } from './tracker.js';
 import { parseExtraSelectors } from './mintdetect.js';
 import { inspectContract, type ContractInfo } from './inspect.js';
 import { evaluate, formatDuration, type Evaluation, type HuntCriteria } from './criteria.js';
-import { buildAutoMintCall } from './autopilot.js';
+import { buildAutoMintCall } from './mintcall.js';
 import { signOne, type PreparedTx } from './presign.js';
 import { submitAll, waitForReceipts } from './submit.js';
 import { loadWallets, NonceManager, type Wallet } from './wallet.js';

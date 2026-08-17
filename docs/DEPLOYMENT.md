@@ -150,8 +150,12 @@ wallet's `balanceOf` for that contract is checked, and a non-zero balance means
 an earlier cycle already bought it. That makes the loop idempotent with no
 storage to provision or keep in sync.
 
-Cron requests are authenticated separately from the UI — Vercel cannot send
-custom headers, so set `CRON_SECRET` and Vercel passes it automatically.
+**`CRON_SECRET` is required for cron-triggered hunting.** Vercel marks its own
+requests with an `x-vercel-cron` header, but any client can set that header, so
+it is not proof of anything. The endpoint therefore only honours it when paired
+with a matching `CRON_SECRET`; without one, a cron-shaped request is treated
+like any other and must present `API_TOKEN`. Set `CRON_SECRET` in your
+environment and Vercel passes it automatically.
 
 ## Scheduled mints with Vercel Cron
 

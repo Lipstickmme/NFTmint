@@ -1,4 +1,11 @@
-import { handleApi, authorize, jsonSafe, type ApiRequest, type ApiResponse } from '../src/http.js';
+import {
+  handleApi,
+  authorize,
+  jsonSafe,
+  constantTimeEquals,
+  type ApiRequest,
+  type ApiResponse,
+} from '../src/http.js';
 import { loadHuntConfig } from '../src/config.js';
 import { runHuntCycle } from '../src/hunt.js';
 import { mergeCriteria } from '../src/criteria.js';
@@ -19,30 +26,43 @@ import { mergeCriteria } from '../src/criteria.js';
  *     the request genuinely originates from Cron.
  */
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
-  const isCron = req.headers['x-vercel-cron'] !== undefined;
+  const bearer = Array.isArray(req.headers.authorization)
+    ? req.headers.authorization[0]
+    : req.headers.authorization;
 
-  if (isCron) {
-    // Vercel sends `Authorization: Bearer <CRON_SECRET>` when CRON_SECRET is set.
-    const secret = process.env.CRON_SECRET?.trim();
-    if (secret) {
-      const header = Array.isArray(req.headers.authorization)
-        ? req.headers.authorization[0]
-        : req.headers.authorization;
-      if (header?.replace(/^Bearer\s+/i, '').trim() !== secret) {
-        res.setHeader('content-type', 'application/json');
-        res.status(401).send(jsonSafe({ error: 'invalid cron secret' }));
-        return;
-      }
+  // `x-vercel-cron` is a hint that a request came from the scheduler, NOT proof
+  // of it: any client can set that header. Treating its presence as authority
+  // would leave a money-spending endpoint wide open, so it only ever unlocks
+  // the request when paired with a matching CRON_SECRET. If CRON_SECRET is not
+  // configured, a cron-shaped request gets no special treatment and must
+  // authenticate like anything else — this endpoint is never open.
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  const claimsCron = req.headers['x-vercel-cron'] !== undefined;
+
+  if (claimsCron && cronSecret) {
+    const provided = bearer?.replace(/^Bearer\s+/i, '').trim();
+    if (provided && constantTimeEquals(provided, cronSecret)) {
+      await runAndRespond(req, res);
+      return;
     }
-    await runAndRespond(req, res);
+    res.setHeader('content-type', 'application/json');
+    res.status(401).send(jsonSafe({ error: 'invalid cron secret' }));
     return;
   }
 
-  // Interactive call — must present the API token.
+  // Everything else — including a request merely claiming to be cron — needs
+  // the API token.
   const auth = authorize(req.headers.authorization);
   if (!auth.ok) {
     res.setHeader('content-type', 'application/json');
-    res.status(auth.status).send(jsonSafe({ error: auth.error }));
+    res.status(auth.status).send(
+      jsonSafe({
+        error: claimsCron
+          ? 'CRON_SECRET is not set, so scheduled requests cannot be verified. ' +
+            'Set CRON_SECRET in your environment to enable cron-triggered hunting.'
+          : auth.error,
+      }),
+    );
     return;
   }
   await runAndRespond(req, res);

@@ -14,14 +14,21 @@ import type { RpcClient } from './rpc.js';
 export interface Wallet {
   index: number;
   address: Address;
-  privateKey: Hex;
+  /**
+   * Signer derived from the private key.
+   *
+   * The raw key is deliberately NOT retained on this object. Signing only ever
+   * goes through `account`, so keeping a second copy of the secret would add
+   * nothing but another place it could reach a log, an error dump, or a
+   * serialized response.
+   */
   account: ReturnType<typeof privateKeyToAccount>;
 }
 
 export function loadWallets(privateKeys: Hex[]): Wallet[] {
   return privateKeys.map((privateKey, index) => {
     const account = privateKeyToAccount(privateKey);
-    return { index, address: account.address, privateKey, account };
+    return { index, address: account.address, account };
   });
 }
 

@@ -302,16 +302,6 @@ const ADJUSTABLE_FLAGS = [
   'freeOnly',
 ] as const;
 
-export type AdjustableKey = keyof typeof ADJUSTABLE | (typeof ADJUSTABLE_FLAGS)[number];
-
-/** Which criteria the UI may edit, and their bounds. For rendering the form. */
-export function adjustableCriteria(): Record<string, unknown> {
-  return {
-    numbers: ADJUSTABLE,
-    flags: ADJUSTABLE_FLAGS,
-  };
-}
-
 /**
  * Merge user-supplied criteria over the configured defaults.
  *
