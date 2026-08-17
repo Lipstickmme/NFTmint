@@ -45,12 +45,6 @@
       "includeFiles": "src/**"
     }
   },
-  "crons": [
-    {
-      "path": "/api/hunt",
-      "schedule": "* * * * *"
-    }
-  ],
   "headers": [
     {
       "source": "/api/(.*)",
