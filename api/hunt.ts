@@ -9,6 +9,7 @@ import {
 import { loadHuntConfig } from '../src/config.js';
 import { runHuntCycle } from '../src/hunt.js';
 import { mergeCriteria } from '../src/criteria.js';
+import { withSingleFlight } from '../src/ratelimit.js';
 
 /**
  * /api/hunt — one full cycle: sample the feed, judge every candidate, and mint
@@ -73,7 +74,7 @@ async function runAndRespond(req: ApiRequest, res: ApiResponse): Promise<void> {
     req,
     res,
     // Authentication already happened above, for both entry paths.
-    { methods: ['GET', 'POST'], publicRoute: true },
+    { methods: ['GET', 'POST'], publicRoute: true, limit: 'hunt' },
     async (_body, query) => {
       const cfg = loadHuntConfig();
 
@@ -89,17 +90,44 @@ async function runAndRespond(req: ApiRequest, res: ApiResponse): Promise<void> {
       }
       const { criteria, applied } = mergeCriteria(cfg.criteria, overrides);
 
-      const report = await runHuntCycle({
-        windowSec: Math.min(Math.max(Number.isFinite(windowSec) ? windowSec : cfg.windowSec, 5), 50),
-        inspectTop: cfg.inspectTop,
-        maxMintsPerCycle: cfg.maxMintsPerCycle,
-        // An operator can force practice mode server-side with HUNT_DRY_RUN=true,
-        // and then the browser cannot turn it live.
-        dryRun: cfg.dryRun ? true : dryRun,
-        criteria,
-      });
+      // Only one cycle at a time. Two overlapping hunts would each prime nonces
+      // from the same wallets and then broadcast conflicting transactions, so
+      // the second batch would be rejected as "nonce too low". A cron firing
+      // while the browser is already hunting is exactly that case.
+      const outcome = await withSingleFlight('hunt', () =>
+        runHuntCycle({
+          windowSec: Math.min(
+            Math.max(Number.isFinite(windowSec) ? windowSec : cfg.windowSec, 5),
+            50,
+          ),
+          inspectTop: cfg.inspectTop,
+          maxMintsPerCycle: cfg.maxMintsPerCycle,
+          // An operator can force practice mode server-side with
+          // HUNT_DRY_RUN=true, and then the browser cannot turn it live.
+          dryRun: cfg.dryRun ? true : dryRun,
+          criteria,
+        }),
+      );
 
-      return { ...report, appliedOverrides: applied, serverForcesDryRun: cfg.dryRun };
+      if (!outcome.ran) {
+        return {
+          skipped: true,
+          reason: 'A hunt cycle is already running; this request was skipped.',
+          candidates: [],
+          qualified: 0,
+          mintedCollections: 0,
+          observed: { feedTxSeen: 0, mintsSeen: 0, contractsTracked: 0 },
+          dryRun: cfg.dryRun,
+          feedConnected: false,
+          note: 'Skipped to avoid two cycles competing for the same wallet nonces.',
+        };
+      }
+
+      return {
+        ...outcome.value,
+        appliedOverrides: applied,
+        serverForcesDryRun: cfg.dryRun,
+      };
     },
   );
 }

@@ -206,6 +206,33 @@ one. `npm run auto` (autopilot) runs on that host too.
 
 ---
 
+## Rate limits and overlapping cycles
+
+The spending endpoints are rate limited per process, and `/api/hunt` runs one
+cycle at a time:
+
+| Endpoint | Burst | Sustained |
+| --- | --- | --- |
+| `/api/hunt` | 6 | 6/min |
+| `/api/mint` | 10 | 10/min |
+| reads (`status`, `plan`, `inspect`, `preflight`, `scan`) | 60 | 60/min |
+
+A hunt cycle takes ~35s, so continuous hunting sits near 2/min — the limit is
+there to bound a leaked token, not to get in your way. Exceeding one returns
+`429` with a `Retry-After` header. Limits are charged only after authentication,
+so a flood of bad-token requests cannot lock you out of your own bot.
+
+`/api/hunt` also refuses to start a second cycle while one is running. That is
+about correctness rather than abuse: two concurrent cycles would prime nonces
+from the same wallets and then broadcast conflicting transactions, so the second
+batch would be rejected as "nonce too low". A cron firing while the browser is
+already hunting hits exactly that, and now returns a skipped result instead.
+
+These counters live in the process, so on serverless each instance keeps its
+own. That makes them a real speed bump rather than a distributed guarantee —
+the hard bound on losses stays `MAX_MINT_VALUE_ETH`, which is enforced per run
+and cannot be widened by any request.
+
 ## Verifying a deployment
 
 ```bash

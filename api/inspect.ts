@@ -12,7 +12,7 @@ import { loadWallets } from '../src/wallet.js';
  * costs, whether the sale is open, and whether this wallet already holds one.
  */
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
-  await handleApi(req, res, { methods: ['GET'] }, async (_body, query) => {
+  await handleApi(req, res, { methods: ['GET'], limit: 'read' }, async (_body, query) => {
     const contract = query.get('contract')?.trim();
     if (!contract || !isAddress(contract)) {
       const err = new Error('Pass ?contract=0x… with a valid address');

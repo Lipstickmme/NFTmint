@@ -8,5 +8,5 @@ import { getStatus } from '../src/service.js';
  * those should not be public.
  */
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
-  await handleApi(req, res, { methods: ['GET'] }, async () => getStatus());
+  await handleApi(req, res, { methods: ['GET'], limit: 'read' }, async () => getStatus());
 }

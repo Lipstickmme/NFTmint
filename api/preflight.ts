@@ -8,7 +8,7 @@ import { runPreflightService } from '../src/service.js';
  * configuration before committing to it.
  */
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
-  await handleApi(req, res, { methods: ['POST'] }, async (body) =>
+  await handleApi(req, res, { methods: ['POST'], limit: 'read' }, async (body) =>
     runPreflightService(body),
   );
 }

@@ -3,6 +3,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { NODE_INTERFACE_ADDRESS } from '../src/chain.js';
 import type { ApiRequest, ApiResponse } from '../src/http.js';
+import { resetRateLimits } from '../src/ratelimit.js';
 
 import healthHandler from '../api/health.js';
 import statusHandler from '../api/status.js';
@@ -110,6 +111,10 @@ let mock: Mock;
 let savedEnv: NodeJS.ProcessEnv;
 
 beforeEach(async () => {
+  // Buckets are process-wide, so clear them between cases. Without this the
+  // suite would pass only by staying under the limit by accident, and adding
+  // one more test could start failing an unrelated one.
+  resetRateLimits();
   savedEnv = { ...process.env };
   mock = await startMockNode();
   Object.assign(process.env, {
@@ -175,6 +180,41 @@ describe('authentication', () => {
   it('rejects a disallowed method', async () => {
     const res = await call(mintHandler, { method: 'GET', headers: auth });
     expect(res.status).toBe(405);
+  });
+});
+
+describe('rate limiting', () => {
+  it('returns 429 with Retry-After once the mint bucket is spent', async () => {
+    // Drive /api/mint past its burst allowance and confirm the limiter is
+    // actually wired into the route, not just unit-tested in isolation.
+    let last = await call(mintHandler, { method: 'POST', headers: auth, body: '{}' });
+    for (let i = 0; i < 15 && last.status !== 429; i++) {
+      last = await call(mintHandler, { method: 'POST', headers: auth, body: '{}' });
+    }
+
+    expect(last.status).toBe(429);
+    expect(last.headers['retry-after']).toBeDefined();
+    expect((last.body as { error: string }).error).toMatch(/Too many requests/);
+  });
+
+  it('charges the limit only after authentication', async () => {
+    // A flood of unauthenticated requests must not consume the operator's
+    // allowance and lock them out of their own bot.
+    for (let i = 0; i < 30; i++) {
+      await call(mintHandler, { method: 'POST', headers: { authorization: 'Bearer wrong' }, body: '{}' });
+    }
+    const good = await call(mintHandler, { method: 'POST', headers: auth, body: '{}' });
+    expect(good.status).toBe(200);
+  });
+
+  it('keeps read and mint budgets separate', async () => {
+    let last = await call(mintHandler, { method: 'POST', headers: auth, body: '{}' });
+    for (let i = 0; i < 15 && last.status !== 429; i++) {
+      last = await call(mintHandler, { method: 'POST', headers: auth, body: '{}' });
+    }
+    expect(last.status).toBe(429);
+    // Exhausting minting must not block checking status.
+    expect((await call(statusHandler, { headers: auth })).status).toBe(200);
   });
 });
 

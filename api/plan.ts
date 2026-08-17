@@ -17,7 +17,7 @@ import { buildMintPlan } from '../src/mintplan.js';
  * paste raw calldata.
  */
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
-  await handleApi(req, res, { methods: ['GET'] }, async (_body, query) => {
+  await handleApi(req, res, { methods: ['GET'], limit: 'read' }, async (_body, query) => {
     const target = query.get('target') ?? query.get('contract') ?? '';
     const quantity = Number(query.get('quantity') ?? 1);
 

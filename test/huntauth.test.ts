@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { ApiRequest, ApiResponse } from '../src/http.js';
 import huntHandler from '../api/hunt.js';
+import { resetRateLimits } from '../src/ratelimit.js';
 
 /**
  * Authentication on /api/hunt.
@@ -49,6 +50,7 @@ async function call(headers: Record<string, string | undefined> = {}): Promise<C
 
 let saved: NodeJS.ProcessEnv;
 beforeEach(() => {
+  resetRateLimits();
   saved = { ...process.env };
   process.env.API_TOKEN = TOKEN;
   delete process.env.CRON_SECRET;

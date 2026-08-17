@@ -10,7 +10,7 @@ import { scanFeedService } from '../src/service.js';
  * Longer windows see more, bounded by the function's max duration.
  */
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
-  await handleApi(req, res, { methods: ['GET'] }, async (_body, query) => {
+  await handleApi(req, res, { methods: ['GET'], limit: 'read' }, async (_body, query) => {
     const seconds = Number(query.get('seconds') ?? 20);
     return scanFeedService(Number.isFinite(seconds) ? seconds : 20);
   });

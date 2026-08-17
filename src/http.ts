@@ -1,4 +1,10 @@
 import { timingSafeEqual } from 'node:crypto';
+import {
+  checkRateLimit,
+  clientKey,
+  DEFAULT_LIMITS,
+  type LimitName,
+} from './ratelimit.js';
 
 /**
  * Shared HTTP concerns for the web API.
@@ -135,6 +141,13 @@ export interface HandlerOptions {
   methods: string[];
   /** Skip the token check. Only for endpoints that cannot spend or leak. */
   publicRoute?: boolean;
+  /**
+   * Rate-limit bucket to charge this route against.
+   *
+   * Applied after authentication, so a rejected caller cannot exhaust a
+   * legitimate operator's allowance by hammering with a bad token.
+   */
+  limit?: LimitName;
 }
 
 /**
@@ -171,6 +184,23 @@ export async function handleApi(
     const auth = authorize(req.headers.authorization);
     if (!auth.ok) {
       res.status(auth.status).send(jsonSafe({ error: auth.error }));
+      return;
+    }
+  }
+
+  if (options.limit) {
+    const rule = DEFAULT_LIMITS[options.limit];
+    const result = checkRateLimit(`${options.limit}:${clientKey(req.headers)}`, rule);
+    if (!result.allowed) {
+      res.setHeader('retry-after', String(result.retryAfterSec));
+      res.status(429).send(
+        jsonSafe({
+          error:
+            `Too many requests to this endpoint. Try again in ${result.retryAfterSec}s. ` +
+            `This limit exists so a leaked token cannot drain a wallet in one burst.`,
+          retryAfterSec: result.retryAfterSec,
+        }),
+      );
       return;
     }
   }

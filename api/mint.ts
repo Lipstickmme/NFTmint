@@ -14,5 +14,5 @@ import { runMintService } from '../src/service.js';
  *   valueEth, gasLimit, maxFeeGwei, txPerWallet, requireSimulation, dryRun
  */
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
-  await handleApi(req, res, { methods: ['POST'] }, async (body) => runMintService(body));
+  await handleApi(req, res, { methods: ['POST'], limit: 'mint' }, async (body) => runMintService(body));
 }
