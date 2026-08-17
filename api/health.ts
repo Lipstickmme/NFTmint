@@ -1,5 +1,6 @@
 import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
 import { loadProxyConfig, proxyRequest } from '../src/proxy.js';
+import { buildInfo } from '../src/version.js';
 
 /**
  * GET /api/health — deployment readiness.
@@ -46,6 +47,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
       }
     }
 
-    return { ok: problems.length === 0, configured, problems, upstream };
+    // Included so a stale front end can be identified in one request, without
+    // needing a token.
+    return { ok: problems.length === 0, build: buildInfo(), configured, problems, upstream };
   });
 }

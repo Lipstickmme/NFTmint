@@ -64,7 +64,8 @@
       "source": "/(.*)",
       "headers": [
         { "key": "x-frame-options", "value": "DENY" },
-        { "key": "referrer-policy", "value": "no-referrer" }
+        { "key": "referrer-policy", "value": "no-referrer" },
+        { "key": "cache-control", "value": "no-cache, must-revalidate" }
       ]
     }
   ]

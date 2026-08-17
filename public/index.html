@@ -219,7 +219,10 @@
   </details>
 </details>
 
-<footer>Use burner wallets · spending capped by <code>MAX_MINT_VALUE_ETH</code> on the server</footer>
+<footer>
+  Use burner wallets · spending capped by <code>MAX_MINT_VALUE_ETH</code> on the server
+  <span id="build" class="dim"></span>
+</footer>
 
 <script>
 'use strict';
@@ -228,6 +231,10 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const msg=(k,t)=>`<div class="msg ${k}">${t}</div>`;
 const shortAddr=a=>a?a.slice(0,8)+'…'+a.slice(-4):'';
 let hunting=false,plan=null,cycles=0,serverForcesDry=false,defaults=null;
+
+// Must match UI_VERSION in src/version.ts. If the server reports a different
+// value, this HTML was served from a cache and is not the current interface.
+const PAGE_VERSION='4-one-screen';
 
 /* ── The rules, with plain-English copy and their defaults ───────────────── */
 const RULES=[
@@ -306,6 +313,15 @@ async function boot(){
     }).join('');
     $('alert').innerHTML=h.problems.length?msg('warn',esc(h.problems.join(' · '))):'';
     if(!h.configured.apiToken||!tok())$('setup').open=true;
+
+    // The page bakes in the version it was built as; the server reports the one
+    // it is running. A mismatch means this HTML came from a cache, which
+    // otherwise looks like the app misbehaving.
+    if(h.build){
+      const stale=h.build.uiVersion!==PAGE_VERSION;
+      $('build').innerHTML=` · build ${esc(h.build.commit)} (${esc(h.build.uiVersion)})`+
+        (stale?` <span class="err-t">— this page is cached and out of date. Hard-refresh with Ctrl/Cmd+Shift+R.</span>`:'');
+    }
   }catch(e){$('alert').innerHTML=msg('err',esc(e.message))}
 
   renderMode();
