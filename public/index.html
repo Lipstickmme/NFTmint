@@ -6,525 +6,805 @@
 <meta name="robots" content="noindex,nofollow">
 <title>NFTmint — Robinhood Chain</title>
 <style>
-  :root{color-scheme:light dark;
-    --bg:#0b0d10;--panel:#12151b;--panel2:#181c24;--fg:#e6e9ef;--dim:#8b93a7;
-    --line:#242a35;--accent:#5b9dff;--ok:#3ddc97;--warn:#ffb454;--err:#ff6b6b;--r:10px}
-  @media(prefers-color-scheme:light){:root{
-    --bg:#f6f7f9;--panel:#fff;--panel2:#f1f3f7;--fg:#14171f;--dim:#5b6376;--line:#e2e5ec}}
+  :root{
+    --bg0:#070910; --bg1:#0d1120; --glass:rgba(255,255,255,.055);
+    --glass-hi:rgba(255,255,255,.10); --stroke:rgba(255,255,255,.11);
+    --fg:#eaeefb; --dim:#98a1bd; --faint:#6d768f;
+    --a1:#7c5cff; --a2:#22d3ee; --ok:#34e5a0; --warn:#ffb454; --err:#ff6b81;
+    --r:16px; --rs:11px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg0:#eef1f8; --bg1:#f8fafd; --glass:rgba(255,255,255,.72);
+      --glass-hi:rgba(255,255,255,.9); --stroke:rgba(16,20,40,.10);
+      --fg:#141827; --dim:#535d78; --faint:#7d86a1; }
+  }
   *{box-sizing:border-box}
-  body{margin:0 auto;max-width:860px;padding:20px;background:var(--bg);color:var(--fg);
-       font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
-  code,.mono,input,textarea,table{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  h1{font-size:17px;margin:0}
-  h2{font-size:12px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)}
-  p{margin:0 0 10px}
+  html,body{min-height:100%}
+  /* The body gradient is fixed to the viewport, so it paints nothing below the
+     fold on a long page and the bare page shows through as white. Painting the
+     base colour on <html> backs the whole document, including overscroll. */
+  html{background:var(--bg0)}
+  body{
+    margin:0; padding:26px 20px 60px; color:var(--fg);
+    font:14.5px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;
+    background:
+      radial-gradient(1100px 620px at 12% -8%, rgba(124,92,255,.20), transparent 62%),
+      radial-gradient(900px 560px at 92% 4%, rgba(34,211,238,.16), transparent 60%),
+      linear-gradient(168deg,var(--bg0),var(--bg1));
+    background-attachment:fixed;
+    -webkit-font-smoothing:antialiased;
+  }
+  .shell{max-width:900px;margin:0 auto}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+
+  /* ── glass ─────────────────────────────────────────────────────────── */
+  .glass{
+    background:var(--glass); border:1px solid var(--stroke); border-radius:var(--r);
+    backdrop-filter:blur(18px) saturate(150%); -webkit-backdrop-filter:blur(18px) saturate(150%);
+    box-shadow:0 10px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.07);
+  }
+  .card{padding:22px;margin-bottom:16px}
+
+  header{margin-bottom:18px}
+  .brand{display:flex;align-items:center;gap:11px}
+  .dot{width:11px;height:11px;border-radius:50%;
+    background:linear-gradient(135deg,var(--a1),var(--a2));
+    box-shadow:0 0 16px rgba(124,92,255,.8)}
+  h1{font-size:19px;margin:0;letter-spacing:-.2px;font-weight:650}
+  .tag{color:var(--dim);font-size:13px;margin-top:5px}
+  h2{font-size:11.5px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);font-weight:600}
+  .lede{color:var(--dim);font-size:13.5px;margin:8px 0 0}
+  .hint{color:var(--faint);font-size:12.2px;line-height:1.55;margin-top:7px}
   .dim{color:var(--dim)} .ok-t{color:var(--ok)} .err-t{color:var(--err)} .warn-t{color:var(--warn)}
-  .lead{color:var(--dim);font-size:13px;margin-bottom:14px}
-  .hint{color:var(--dim);font-size:12px;margin-top:6px;line-height:1.5}
-  .def{font-size:11px;color:var(--dim);opacity:.85}
 
-  .bar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:10px 14px;
-       background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin:14px 0}
-  .bar .item{font-size:12px}
+  /* ── status strip ──────────────────────────────────────────────────── */
+  .strip{display:flex;gap:9px;flex-wrap:wrap;padding:12px 14px;margin-bottom:14px}
+  .stat{display:flex;flex-direction:column;gap:2px;padding:6px 13px;border-radius:var(--rs);
+    background:var(--glass-hi);border:1px solid var(--stroke);min-width:92px}
+  .stat .k{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
+  .stat .v{font-size:14px;font-weight:640}
 
-  .mode{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--r);
-        margin:14px 0;border:1px solid;font-size:13px}
-  .mode.live{border-color:var(--err);background:rgba(255,107,107,.07)}
-  .mode.practice{border-color:var(--warn);background:rgba(255,180,84,.07)}
-  .mode b{font-weight:700}
-  .switch{margin-left:auto}
+  /* ── buttons ───────────────────────────────────────────────────────── */
+  button{
+    position:relative;overflow:hidden;border:1px solid var(--stroke);
+    background:var(--glass-hi); color:var(--fg); cursor:pointer;
+    padding:11px 20px;border-radius:var(--rs);font-size:13.5px;font-weight:600;
+    font-family:inherit; transition:transform .16s, box-shadow .22s, border-color .22s, opacity .2s;
+  }
+  button::after{
+    content:'';position:absolute;top:0;left:0;width:100%;height:100%;
+    background:linear-gradient(115deg,transparent 32%,rgba(255,255,255,.5) 50%,transparent 68%);
+    transform:translateX(-130%); transition:transform .62s cubic-bezier(.2,.7,.3,1); pointer-events:none;
+  }
+  button:hover:not(:disabled)::after{transform:translateX(130%)}
+  button:hover:not(:disabled){transform:translateY(-1px);border-color:rgba(255,255,255,.24)}
+  button:active:not(:disabled){transform:translateY(0)}
+  button:disabled{opacity:.42;cursor:not-allowed}
+  button:disabled::after{display:none}
+  .primary{background:linear-gradient(135deg,var(--a1),var(--a2));border-color:transparent;color:#fff;
+    box-shadow:0 6px 20px rgba(124,92,255,.36)}
+  .primary:hover:not(:disabled){box-shadow:0 10px 28px rgba(124,92,255,.5)}
+  .go{background:linear-gradient(135deg,#18c98a,#22d3ee);border-color:transparent;color:#03231a;
+    box-shadow:0 6px 20px rgba(52,229,160,.34)}
+  .stopbtn{background:linear-gradient(135deg,#ff5f7a,#ff9166);border-color:transparent;color:#fff;
+    box-shadow:0 6px 20px rgba(255,107,129,.36)}
+  .xl{padding:14px 28px;font-size:15px;border-radius:13px}
+  .ghost{background:transparent}
+  .linkish{background:none;border:none;color:var(--a2);padding:0;font-size:12.5px;box-shadow:none}
+  .linkish::after{display:none}
+  .linkish:hover{transform:none;text-decoration:underline}
+  .actions{display:flex;gap:11px;flex-wrap:wrap;align-items:center;margin-top:17px}
 
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
-         padding:18px;margin-bottom:14px}
-  .step{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;
-        border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;margin-right:7px}
+  /* ── inputs ────────────────────────────────────────────────────────── */
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:7px;font-weight:500}
+  input,textarea{
+    width:100%;padding:12px 14px;border-radius:var(--rs);color:var(--fg);
+    background:rgba(0,0,0,.20);border:1px solid var(--stroke);font-size:13.5px;
+    font-family:inherit;transition:border-color .2s, box-shadow .2s;
+  }
+  @media (prefers-color-scheme: light){ input,textarea{background:rgba(255,255,255,.8)} }
+  input:focus,textarea:focus{outline:none;border-color:rgba(124,92,255,.75);
+    box-shadow:0 0 0 3px rgba(124,92,255,.16)}
+  input.big{font-size:15.5px;padding:15px 16px}
+  textarea{min-height:60px;resize:vertical;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+  input[type=checkbox]{width:auto;accent-color:var(--a1)}
+  .qty{width:112px;flex:none}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:18px;margin-top:14px}
+  .field{padding-top:14px;border-top:1px solid var(--stroke)}
+  .field .name{font-size:13.5px;font-weight:620}
+  .field input{margin-top:8px}
+  .def{font-size:11px;color:var(--faint);margin-top:6px}
+  .inline{display:flex;align-items:center;gap:9px;margin:0}
 
-  input,textarea,select{width:100%;padding:10px 12px;background:var(--bg);color:var(--fg);
-                 border:1px solid var(--line);border-radius:8px;font-size:13px}
-  input.big{font-size:15px;padding:13px 14px}
-  textarea{min-height:54px;resize:vertical}
-  label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
-  .qty{width:110px;flex:none}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-top:12px}
-  .field{border-top:1px solid var(--line);padding-top:12px}
-  .field input{margin-top:6px}
-  .field .name{font-size:13px;font-weight:600}
+  /* ── messages, pills, tables ───────────────────────────────────────── */
+  .msg{padding:12px 14px;border-radius:var(--rs);font-size:13px;margin:11px 0;
+    border:1px solid;background:rgba(255,255,255,.04)}
+  .msg.ok{color:var(--ok);border-color:rgba(52,229,160,.42)}
+  .msg.err{color:var(--err);border-color:rgba(255,107,129,.42)}
+  .msg.warn{color:var(--warn);border-color:rgba(255,180,84,.42)}
+  .msg.info{color:var(--dim);border-color:var(--stroke)}
 
-  button{padding:10px 18px;border-radius:8px;border:1px solid var(--line);background:var(--bg);
-         color:var(--fg);cursor:pointer;font-size:13px;font-weight:500}
-  button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
-  button:disabled{opacity:.45;cursor:not-allowed}
-  button.p{background:var(--accent);border-color:var(--accent);color:#fff}
-  button.p:hover:not(:disabled){filter:brightness(1.12);color:#fff}
-  button.go{background:var(--ok);border-color:var(--ok);color:#04231a}
-  button.stop{background:var(--err);border-color:var(--err);color:#fff}
-  button.xl{font-size:15px;padding:13px 26px}
-  button.link{background:none;border:none;color:var(--accent);padding:0;font-size:12px}
+  .mode{display:flex;align-items:center;gap:12px;padding:13px 16px;border-radius:var(--r);
+    margin-bottom:14px;border:1px solid;font-size:13.3px}
+  .mode.live{border-color:rgba(255,107,129,.5);background:linear-gradient(90deg,rgba(255,107,129,.13),transparent)}
+  .mode.practice{border-color:rgba(255,180,84,.5);background:linear-gradient(90deg,rgba(255,180,84,.12),transparent)}
+  .mode .sp{margin-left:auto}
 
-  .msg{padding:10px 12px;border-radius:8px;font-size:13px;margin:10px 0;border:1px solid}
-  .msg.ok{color:var(--ok);border-color:var(--ok)} .msg.err{color:var(--err);border-color:var(--err)}
-  .msg.warn{color:var(--warn);border-color:var(--warn)} .msg.info{color:var(--dim);border-color:var(--line)}
+  .pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:10.6px;
+    font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  .p-live{background:rgba(52,229,160,.16);color:var(--ok);box-shadow:0 0 12px rgba(52,229,160,.22)}
+  .p-slow{background:rgba(255,180,84,.16);color:var(--warn)}
+  .p-quiet{background:rgba(152,161,189,.14);color:var(--dim)}
+  .p-buy{background:linear-gradient(135deg,var(--a1),var(--a2));color:#fff;box-shadow:0 0 14px rgba(124,92,255,.45)}
+  .p-skip{background:rgba(152,161,189,.13);color:var(--faint)}
 
-  .kv{display:flex;justify-content:space-between;gap:14px;padding:6px 0;
-      border-bottom:1px solid var(--line);font-size:13px}
-  .kv:last-child{border-bottom:none} .kv span:first-child{color:var(--dim)}
-  .bar2{height:6px;background:var(--panel2);border-radius:4px;overflow:hidden;margin:8px 0 4px}
-  .bar2>div{height:100%;background:var(--accent)}
+  .kv{display:flex;justify-content:space-between;gap:16px;padding:9px 0;
+    border-bottom:1px solid var(--stroke);font-size:13.2px}
+  .kv:last-child{border-bottom:none} .kv>span:first-child{color:var(--dim)}
+  .meter{height:7px;border-radius:99px;background:rgba(0,0,0,.28);overflow:hidden;margin:10px 0 5px}
+  .meter>div{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--a1),var(--a2));
+    transition:width .5s cubic-bezier(.2,.7,.3,1)}
 
-  .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;margin-top:12px}
-  table{border-collapse:collapse;width:100%;font-size:12.5px}
-  th,td{text-align:right;padding:8px 11px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .tablewrap{overflow-x:auto;border:1px solid var(--stroke);border-radius:var(--rs);margin-top:14px}
+  table{border-collapse:collapse;width:100%;font-size:12.6px}
+  th,td{text-align:right;padding:10px 13px;border-bottom:1px solid var(--stroke);white-space:nowrap}
   th:first-child,td:first-child{text-align:left}
-  tbody tr:last-child td{border-bottom:none} tbody tr:hover{background:var(--panel2)}
-  th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase}
-  a{color:var(--accent)}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:rgba(255,255,255,.045)}
+  th{color:var(--faint);font-weight:600;font-size:10.6px;text-transform:uppercase;letter-spacing:.07em}
+  a{color:var(--a2);text-decoration:none} a:hover{text-decoration:underline}
 
-  .tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:600}
-  .t-live{background:rgba(61,220,151,.16);color:var(--ok)}
-  .t-slow{background:rgba(255,180,84,.16);color:var(--warn)}
-  .t-quiet{background:rgba(139,147,167,.16);color:var(--dim)}
-  .t-buy{background:rgba(61,220,151,.16);color:var(--ok)}
-  .t-skip{background:rgba(139,147,167,.14);color:var(--dim)}
+  details{margin-top:14px;border-top:1px solid var(--stroke);padding-top:13px}
+  details.bare{border:none;padding-top:6px;margin-top:8px}
+  summary{cursor:pointer;color:var(--dim);font-size:12.5px;font-weight:550;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:'▸ ';color:var(--a2);transition:transform .2s;display:inline-block}
+  details[open]>summary::before{content:'▾ '}
+  .chk{display:grid;grid-template-columns:16px 1fr;gap:9px;padding:6px 0;font-size:12.2px}
+  .chk .why{grid-column:2;color:var(--faint);font-size:11.4px;margin-top:2px}
 
-  details{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
-  details.plain{border:none;padding-top:0}
-  summary{cursor:pointer;color:var(--dim);font-size:12px}
-  .chk{display:grid;grid-template-columns:14px 1fr;gap:8px;padding:4px 0;font-size:12px}
-  .chk .why{grid-column:2;color:var(--dim);font-size:11px}
-  .log{max-height:190px;overflow-y:auto;font-size:12px;margin-top:10px}
-  .log div{padding:3px 0;border-bottom:1px solid var(--line)}
-  .pulse{animation:p 1.3s ease-in-out infinite}@keyframes p{0%,100%{opacity:1}50%{opacity:.45}}
-  footer{color:var(--dim);font-size:12px;margin-top:22px}
+  .log{max-height:200px;overflow-y:auto;font-size:12.2px;margin-top:13px;
+    font-family:ui-monospace,Menlo,monospace}
+  .log div{padding:5px 0;border-bottom:1px solid var(--stroke)}
+  .log div:last-child{border-bottom:none}
+
+  .spin{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px;
+    border:2px solid rgba(255,255,255,.22);border-top-color:var(--a2);animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  footer{color:var(--faint);font-size:12px;margin-top:26px;text-align:center}
 </style>
 </head>
 <body>
+<div class="shell">
 
-<h1>NFTmint <span class="dim" style="font-weight:400;font-size:13px">· Robinhood Chain</span></h1>
-<div class="lead">
-  On this chain mints are won by <b>arriving first</b>, not by paying more — so the bot
-  prepares everything in advance and sends the instant it decides to buy.
-</div>
+  <header>
+    <div class="brand"><span class="dot"></span><h1>NFTmint</h1></div>
+    <div class="tag">Robinhood Chain · mints are won by arriving first, not by paying more</div>
+  </header>
 
-<div class="bar" id="statusBar"><span class="dim">connecting…</span></div>
-<div id="modeBar"></div>
-<div id="alert"></div>
+  <div class="strip glass" id="strip"><span class="dim">connecting…</span></div>
+  <div id="modebar"></div>
+  <div id="alert"></div>
 
-<!-- ───────── AUTO-HUNT ───────── -->
-<div class="panel">
-  <h2><span class="step">1</span>Auto-hunt — let it find and buy mints for you</h2>
-  <p class="dim" style="font-size:13px">
-    Press start and it runs on its own. Each round it listens to the chain for about
-    35 seconds to see what is being minted right now, checks each collection against
-    the rules below, and buys the ones that pass — from every wallet that has gas.
-    It keeps going until you stop it.
-  </p>
-  <p class="hint" style="margin-top:0">
-    <b>You do not need to configure anything to start.</b> The settings below already hold
-    sensible defaults chosen to catch fast-selling free mints. Open
-    <b>Adjust the rules</b> only if you want it stricter or looser.
-  </p>
-
-  <div class="row">
-    <button class="go xl" id="btnHunt" onclick="toggleHunt()">Start hunting</button>
-    <span id="huntState" class="dim" style="font-size:12px"></span>
-  </div>
-
-  <div id="huntOut"></div>
-  <div class="log" id="log"><span class="dim">Nothing yet — press Start hunting.</span></div>
-
-  <details id="settings">
-    <summary><b>Adjust the rules</b> — what counts as a mint worth buying</summary>
-    <p class="hint">
-      Every rule must pass before it buys. Each one rules out a different way of being
-      wrong. Changes apply to the next round and are saved in this browser only.
-      <b>Money limits are not here</b> — the spend cap and price ceiling live on the
-      server so a browser can never widen them.
+  <!-- AUTO-HUNT -->
+  <section class="glass card">
+    <h2>Auto-hunt</h2>
+    <p class="lede">
+      Watches live minting on the chain, judges every collection against the rules,
+      and buys the ones that pass — from every wallet that has gas.
     </p>
-    <div class="grid" id="settingsForm"></div>
-    <div class="row">
-      <button onclick="resetSettings()">Reset to defaults</button>
-      <span id="settingsState" class="dim" style="font-size:12px"></span>
-    </div>
-  </details>
-</div>
-
-<!-- ───────── MANUAL MINT ───────── -->
-<div class="panel">
-  <h2><span class="step">2</span>Or mint one collection yourself</h2>
-  <p class="dim" style="font-size:13px">
-    Already know what you want? Paste it here. The bot reads the contract itself — the
-    price, how many are left, whether the sale is open, and which mint function works —
-    so you do not need to know anything technical about it.
-  </p>
-
-  <label for="target" style="margin-top:12px">Contract address or link</label>
-  <input id="target" class="big" placeholder="0x… — or paste any link that contains the address" spellcheck="false">
-  <div class="hint">Works with a plain address, an explorer link, or a marketplace item link.</div>
-
-  <div class="row">
-    <input id="qty" class="qty" type="number" min="1" value="1" title="How many to mint">
-    <button class="p" id="btnPlan" onclick="doPlan()">Check it</button>
-    <button class="p xl" id="btnMint" onclick="doMint()" disabled>Mint</button>
-    <span id="mintState" class="dim" style="font-size:12px"></span>
-  </div>
-  <div class="hint"><b>Check it</b> only reads — it never spends. The Mint button unlocks once a working mint call is found.</div>
-
-  <div id="planOut"></div>
-  <div id="mintOut"></div>
-
-  <details id="advanced">
-    <summary>Advanced — set the mint call by hand</summary>
     <p class="hint">
-      Only needed if the automatic check cannot work a contract out. Open any successful
-      mint transaction for it on the block explorer, find <b>Input Data</b>, and copy the
-      hex string here.
+      <b>Nothing to configure to start.</b> The rules below already hold sensible
+      defaults for catching fast-selling free mints. Each round listens for about
+      35 seconds, then decides. It keeps going while this tab is open.
     </p>
-    <label style="margin-top:10px" for="calldata">Raw calldata</label>
-    <textarea id="calldata" placeholder="0x…" spellcheck="false"></textarea>
-    <label style="margin-top:10px" for="fn">…or the function signature</label>
-    <input id="fn" placeholder="mint(uint256)" spellcheck="false">
-    <label style="margin-top:10px" for="args">Its arguments — comma separated, <code>$SENDER</code> means your address</label>
-    <input id="args" placeholder="1" spellcheck="false">
-    <label style="margin-top:10px" for="price">Price per token in ETH</label>
-    <input id="price" placeholder="0" inputmode="decimal">
-  </details>
-</div>
 
-<!-- ───────── SETUP ───────── -->
-<details class="panel" id="setup">
-  <summary style="font-size:13px"><b>Setup</b> — access token and deployment</summary>
-  <p class="hint" style="margin-top:10px">
-    Minting spends real money, so the server refuses to act without a token. Set
-    <code>API_TOKEN</code> in your Vercel environment variables and paste the same value
-    here. It is stored in this browser only and never sent anywhere except your own server.
-  </p>
-  <input id="token" type="password" placeholder="paste your API_TOKEN" autocomplete="off">
-  <div class="row">
-    <button class="p" onclick="saveToken()">Save</button>
-    <button onclick="clearToken()">Clear</button>
-    <span id="tokenState" class="dim" style="font-size:12px"></span>
-  </div>
-  <div id="deployOut" style="margin-top:14px"></div>
-  <details class="plain">
-    <summary style="margin-top:10px">What do those mean?</summary>
-    <div class="hint">
-      <b>apiToken · privateKeys · rpcUrls</b> — whether each is set on the server. All three
-      must be true before it can mint.<br>
-      <b>network</b> — <code>mainnet</code> spends real ETH; <code>testnet</code> does not.<br>
-      <b>spendCeilingEth</b> — the hard cap on one run, enforced no matter what the browser asks for.<br>
-      <b>upstreamTracker</b> — <span class="ok-t">false is normal.</span> Only true if you also run
-      an always-on tracker on a separate machine.
+    <div class="actions">
+      <button class="go xl" id="btnHunt" onclick="toggleHunt()">Start hunting</button>
+      <button class="ghost" id="btnOnce" onclick="huntOnce()">Run one round</button>
+      <span id="huntState" class="dim" style="font-size:12.4px"></span>
     </div>
-  </details>
-</details>
 
-<footer>
-  Use burner wallets · spending capped by <code>MAX_MINT_VALUE_ETH</code> on the server
-  <span id="build" class="dim"></span>
-</footer>
+    <div id="huntOut"></div>
+    <div class="log" id="log"><span class="dim">No rounds yet.</span></div>
+
+    <details id="rules">
+      <summary>Adjust the rules — what counts as worth buying</summary>
+      <p class="hint">
+        Every rule must pass before it buys. Changes save in this browser and apply
+        next round. <b>Money limits are not here</b> — the spend cap and price ceiling
+        live on the server so a browser can never widen them.
+      </p>
+      <div class="grid" id="rulesForm"></div>
+      <div class="actions">
+        <button class="ghost" onclick="resetRules()">Reset to defaults</button>
+        <span id="rulesState" class="dim" style="font-size:12.4px"></span>
+      </div>
+    </details>
+  </section>
+
+  <!-- MANUAL -->
+  <section class="glass card">
+    <h2>Mint one yourself</h2>
+    <p class="lede">
+      Paste a contract address or any link containing one. It reads the contract —
+      price, supply left, whether the sale is open — and works out the mint call for you.
+    </p>
+
+    <div style="margin-top:15px">
+      <label for="target">Contract address or link</label>
+      <input id="target" class="big" spellcheck="false" placeholder="0x…">
+    </div>
+
+    <div class="actions">
+      <input id="qty" class="qty" type="number" min="1" value="1" title="How many">
+      <button class="primary" id="btnCheck" onclick="doPlan()">Check it</button>
+      <button class="primary xl" id="btnMint" onclick="doMint()" disabled>Mint</button>
+      <span id="mintState" class="dim" style="font-size:12.4px"></span>
+    </div>
+    <div class="hint"><b>Check it</b> only reads — it never spends. Mint unlocks once a working call is found.</div>
+
+    <div id="planOut"></div>
+    <div id="mintOut"></div>
+
+    <details id="advanced">
+      <summary>Advanced — set the mint call by hand</summary>
+      <p class="hint">
+        Only needed if the automatic check cannot work a contract out. Open a successful
+        mint for it on the explorer, find <b>Input Data</b>, and paste the hex here.
+      </p>
+      <div style="margin-top:12px"><label for="calldata">Raw calldata</label>
+        <textarea id="calldata" spellcheck="false" placeholder="0x…"></textarea></div>
+      <div style="margin-top:12px"><label for="fn">…or function signature</label>
+        <input id="fn" spellcheck="false" placeholder="mint(uint256)"></div>
+      <div style="margin-top:12px"><label for="args">Arguments — comma separated, $SENDER = your address</label>
+        <input id="args" spellcheck="false" placeholder="1"></div>
+      <div style="margin-top:12px"><label for="price">Price per token (ETH)</label>
+        <input id="price" inputmode="decimal" placeholder="0"></div>
+    </details>
+  </section>
+
+  <!-- SETUP -->
+  <details class="glass card" id="setup">
+    <summary style="font-size:13.5px;font-weight:620">Setup — access token &amp; deployment</summary>
+    <p class="hint">
+      Minting spends real money, so the server refuses to act without a token. Set
+      <code>API_TOKEN</code> in your Vercel environment variables and paste the same
+      value here. It stays in this browser.
+    </p>
+    <div style="margin-top:13px">
+      <label for="token">API_TOKEN</label>
+      <input id="token" type="password" autocomplete="off" placeholder="paste your token">
+    </div>
+    <div class="actions">
+      <button class="primary" onclick="saveToken()">Save</button>
+      <button class="ghost" onclick="clearToken()">Clear</button>
+      <span id="tokenState" class="dim" style="font-size:12.4px"></span>
+    </div>
+    <div id="deployOut" style="margin-top:16px"></div>
+  </details>
+
+  <footer>
+    Burner wallets only · spending capped by <code>MAX_MINT_VALUE_ETH</code>
+    <span id="build"></span>
+  </footer>
+</div>
 
 <script>
 'use strict';
-const $=id=>document.getElementById(id);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const msg=(k,t)=>`<div class="msg ${k}">${t}</div>`;
-const shortAddr=a=>a?a.slice(0,8)+'…'+a.slice(-4):'';
-let hunting=false,plan=null,cycles=0,serverForcesDry=false,defaults=null;
 
-// Must match UI_VERSION in src/version.ts. If the server reports a different
-// value, this HTML was served from a cache and is not the current interface.
-const PAGE_VERSION='4-one-screen';
+// Page build identity. Must equal UI_VERSION in src/version.ts — a mismatch
+// means this HTML came from a cache and is not the live interface.
+var PAGE_VERSION = '5-glass';
 
-/* ── The rules, with plain-English copy and their defaults ───────────────── */
-const RULES=[
-  {key:'minMintsPerMinute',label:'Minimum mint speed',unit:'per minute',
-   why:'How fast people are minting it. A collection selling out moves quickly. Lower this to catch quieter mints, raise it to only chase frantic ones.'},
-  {key:'minUniqueMinters',label:'Minimum different wallets',unit:'wallets',
-   why:'The anti-bot check, and the most useful dial here. 300 mints from 4 wallets is one bot talking to itself; 300 from 150 people is real demand. Raise this if you get junk.'},
-  {key:'minAttemptsInWindow',label:'Minimum mints in the window',unit:'mints',
-   why:'Enough activity in the last few seconds to count as a real rush rather than a trickle.'},
-  {key:'maxAgeSec',label:'Only drops newer than',unit:'seconds',
-   why:'How long ago it started. Joining a mint late usually means the supply is already gone and you are racing for scraps.'},
-  {key:'maxSelloutSec',label:'Must sell out within',unit:'seconds',
-   why:'Supply left divided by how fast it is going. This is the real test of "selling out fast" — minting quickly against unlimited supply is not scarcity. Only applied when the contract reports its supply.'},
-  {key:'maxSupplyProgressPct',label:'Skip if more than',unit:'% already minted',
-   why:'How much is already gone. Past this point you will probably lose the race and pay gas for nothing.'},
-];
-const FLAGS=[
-  {key:'freeOnly',label:'Only buy free mints',
-   why:'Strongly recommended. Your worst case is the gas you spend. Turning this off does NOT let it spend freely — paid mints still need a price ceiling set on the server.'},
-  {key:'requireLive',label:'Must still be minting right now',
-   why:'A gap in activity means it already finished, and the numbers you are looking at are history.'},
-  {key:'requireSaleOpen',label:'Respect the contract’s sale switch',
-   why:'If the contract publishes whether its sale is open, believe it.'},
-  {key:'skipIfOwned',label:'Skip ones you already own',
-   why:'Checked on the chain itself. This is what stops repeated rounds from buying the same collection again and again.'},
-];
+var hunting = false, plan = null, rounds = 0, serverDry = false, defaults = null, planTimer = null;
 
-function tok(){return localStorage.getItem('nftmint_token')||''}
-function saveToken(){localStorage.setItem('nftmint_token',$('token').value.trim());renderTok();boot()}
-function clearToken(){localStorage.removeItem('nftmint_token');$('token').value='';renderTok()}
-function renderTok(){const t=tok();$('tokenState').textContent=t?`saved (${t.length} characters)`:'not set';
-  $('tokenState').className=t?'ok-t':'err-t'}
+function $(id){ return document.getElementById(id); }
 
-function settings(){try{return JSON.parse(localStorage.getItem('nftmint_rules')||'{}')}catch{return{}}}
-function setSetting(k,v){const s=settings();
-  if(v===''||v===null||v===undefined)delete s[k];else s[k]=String(v);
-  localStorage.setItem('nftmint_rules',JSON.stringify(s));
-  $('settingsState').textContent='saved — applies next round';renderSettings()}
-function resetSettings(){localStorage.removeItem('nftmint_rules');
-  $('settingsState').textContent='back to defaults';renderSettings()}
-
-async function api(path,opt={}){
-  const h={'content-type':'application/json'};const t=tok();if(t)h.authorization='Bearer '+t;
-  const r=await fetch(path,{...opt,headers:h});const txt=await r.text();
-  let b;try{b=JSON.parse(txt)}catch{throw new Error(`Server error (HTTP ${r.status})`)}
-  if(!r.ok)throw new Error(b.error||('HTTP '+r.status));return b;
+function esc(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-function busy(btn,state,on,label){$(btn).disabled=on;$(state).textContent=on?label:'';
-  $(state).className=on?'dim pulse':'dim'}
-function log(t,cls){const el=$('log');if(el.querySelector('.dim'))el.innerHTML='';
-  const d=document.createElement('div');d.className=cls||'';
-  d.textContent=new Date().toLocaleTimeString()+'  '+t;el.prepend(d);
-  while(el.children.length>60)el.removeChild(el.lastChild)}
+function msg(kind, text){ return '<div class="msg ' + kind + '">' + text + '</div>'; }
+function kv(label, valueHtml, cls){
+  return '<div class="kv"><span>' + esc(label) + '</span><span class="' + (cls || '') + '">' +
+         valueHtml + '</span></div>';
+}
+function shortAddr(a){ return a ? a.slice(0,8) + '…' + a.slice(-4) : ''; }
+function fmtDur(s){
+  if (!isFinite(s)) return '—';
+  if (s < 60) return Math.round(s) + 's';
+  if (s < 3600) return Math.round(s/60) + 'm';
+  return (s/3600).toFixed(1) + 'h';
+}
 
-/* ── mode banner ─────────────────────────────────────────────────────────── */
+/* ── token ─────────────────────────────────────────────────────────────── */
+function tok(){ return localStorage.getItem('nftmint_token') || ''; }
+function saveToken(){
+  localStorage.setItem('nftmint_token', $('token').value.trim());
+  renderTok();
+  boot();
+}
+function clearToken(){
+  localStorage.removeItem('nftmint_token');
+  $('token').value = '';
+  renderTok();
+}
+function renderTok(){
+  var t = tok();
+  $('tokenState').textContent = t ? 'saved (' + t.length + ' characters)' : 'not set';
+  $('tokenState').className = t ? 'ok-t' : 'err-t';
+}
+
+/* ── rules ─────────────────────────────────────────────────────────────── */
+var RULES = [
+  { key:'minMintsPerMinute', label:'Minimum mint speed', unit:'per minute',
+    why:'How fast people are minting it. Something selling out moves quickly.' },
+  { key:'minUniqueMinters', label:'Minimum different wallets', unit:'wallets',
+    why:'The anti-bot check, and the most useful dial here. 300 mints from 4 wallets is one bot; 300 from 150 people is real demand.' },
+  { key:'minAttemptsInWindow', label:'Minimum mints in the window', unit:'mints',
+    why:'Enough activity in the last few seconds to be a real rush, not a trickle.' },
+  { key:'maxAgeSec', label:'Only drops newer than', unit:'seconds',
+    why:'Joining a mint late usually means the supply is already gone.' },
+  { key:'maxSelloutSec', label:'Must sell out within', unit:'seconds',
+    why:'Supply left divided by current speed. The real test — minting fast against unlimited supply is not scarcity.' },
+  { key:'maxSupplyProgressPct', label:'Skip if more than', unit:'% already minted',
+    why:'Past this you will probably lose the race and pay gas for nothing.' }
+];
+var FLAGS = [
+  { key:'freeOnly', label:'Only buy free mints',
+    why:'Recommended. Worst case is the gas. Turning this off does not let it spend freely — paid mints still need a price ceiling set on the server.' },
+  { key:'requireLive', label:'Must still be minting now',
+    why:'A gap means it already finished and the numbers are history.' },
+  { key:'requireSaleOpen', label:'Respect the sale switch',
+    why:'If the contract says whether its sale is open, believe it.' },
+  { key:'skipIfOwned', label:'Skip ones you already own',
+    why:'Checked on chain. Stops repeated rounds rebuying the same collection.' }
+];
+
+function rules(){
+  try { return JSON.parse(localStorage.getItem('nftmint_rules') || '{}'); }
+  catch (e) { return {}; }
+}
+function setRule(key, value){
+  var r = rules();
+  if (value === '' || value === null || value === undefined) delete r[key];
+  else r[key] = String(value);
+  localStorage.setItem('nftmint_rules', JSON.stringify(r));
+  $('rulesState').textContent = 'saved — applies next round';
+  renderRules();
+}
+function resetRules(){
+  localStorage.removeItem('nftmint_rules');
+  $('rulesState').textContent = 'back to defaults';
+  renderRules();
+}
+function renderRules(){
+  var cur = rules(), out = [];
+  for (var i = 0; i < RULES.length; i++) {
+    var r = RULES[i];
+    var custom = cur[r.key] !== undefined;
+    var val = custom ? cur[r.key] : (defaults ? defaults[r.key] : '');
+    var note = custom
+      ? 'changed — default is ' + esc(defaults ? defaults[r.key] : '?')
+      : 'using the default';
+    out.push(
+      '<div class="field">' +
+        '<div class="name">' + esc(r.label) + ' <span class="dim" style="font-weight:400">' + esc(r.unit) + '</span></div>' +
+        '<div class="hint">' + esc(r.why) + '</div>' +
+        '<input type="number" value="' + esc(val) + '" oninput="setRule(\'' + r.key + '\',this.value)">' +
+        '<div class="def">' + note + '</div>' +
+      '</div>'
+    );
+  }
+  for (var j = 0; j < FLAGS.length; j++) {
+    var f = FLAGS[j];
+    var isCustom = cur[f.key] !== undefined;
+    var on = isCustom ? cur[f.key] === 'true' : (defaults ? Boolean(defaults[f.key]) : true);
+    var dnote = isCustom
+      ? 'changed — default is ' + (defaults && defaults[f.key] ? 'on' : 'off')
+      : 'using the default';
+    out.push(
+      '<div class="field">' +
+        '<label class="inline"><input type="checkbox" ' + (on ? 'checked' : '') +
+          ' onchange="setRule(\'' + f.key + '\',this.checked)">' +
+          '<span class="name">' + esc(f.label) + '</span></label>' +
+        '<div class="hint">' + esc(f.why) + '</div>' +
+        '<div class="def">' + dnote + '</div>' +
+      '</div>'
+    );
+  }
+  $('rulesForm').innerHTML = out.join('');
+}
+
+/* ── api ───────────────────────────────────────────────────────────────── */
+async function api(path, options){
+  options = options || {};
+  var headers = { 'content-type': 'application/json' };
+  var t = tok();
+  if (t) headers.authorization = 'Bearer ' + t;
+  var res = await fetch(path, { method: options.method || 'GET', body: options.body, headers: headers });
+  var text = await res.text();
+  var body;
+  try { body = JSON.parse(text); }
+  catch (e) { throw new Error('Server returned a non-JSON response (HTTP ' + res.status + ')'); }
+  if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
+  return body;
+}
+function busy(btnId, stateId, on, label){
+  $(btnId).disabled = on;
+  $(stateId).innerHTML = on ? '<span class="spin"></span> ' + esc(label) : '';
+}
+function log(text, cls){
+  var el = $('log');
+  if (el.querySelector('.dim')) el.innerHTML = '';
+  var d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = new Date().toLocaleTimeString() + '  ' + text;
+  el.insertBefore(d, el.firstChild);
+  while (el.children.length > 60) el.removeChild(el.lastChild);
+}
+
+/* ── mode ──────────────────────────────────────────────────────────────── */
+function isPractice(){ return localStorage.getItem('nftmint_practice') === '1' || serverDry; }
+function setPractice(on){ localStorage.setItem('nftmint_practice', on ? '1' : '0'); renderMode(); }
 function renderMode(){
-  const practice=localStorage.getItem('nftmint_practice')==='1'||serverForcesDry;
-  $('modeBar').innerHTML=practice
-    ? `<div class="mode practice"><b>Practice mode</b> — it will do everything except actually buy.
-        ${serverForcesDry?'Locked on by the server (<code>HUNT_DRY_RUN=true</code>).':''}
-        <span class="switch">${serverForcesDry?'':'<button class="link" onclick="setPractice(false)">Switch to live buying →</button>'}</span></div>`
-    : `<div class="mode live"><b>Live — real money.</b> It will buy with your wallets, up to the server’s spend cap.
-        <span class="switch"><button class="link" onclick="setPractice(true)">Switch to practice mode →</button></span></div>`;
+  var html;
+  if (isPractice()) {
+    var locked = serverDry ? ' Locked on by the server (<code>HUNT_DRY_RUN=true</code>).' : '';
+    var sw = serverDry ? '' : '<span class="sp"><button class="linkish" onclick="setPractice(false)">Switch to live buying →</button></span>';
+    html = '<div class="mode practice"><b>Practice mode</b> — everything except actually buying.' + locked + sw + '</div>';
+  } else {
+    html = '<div class="mode live"><b>Live — real money.</b> It will buy with your wallets, up to the server spend cap.' +
+           '<span class="sp"><button class="linkish" onclick="setPractice(true)">Switch to practice →</button></span></div>';
+  }
+  $('modebar').innerHTML = html;
 }
-function setPractice(on){localStorage.setItem('nftmint_practice',on?'1':'0');renderMode()}
-function isPractice(){return localStorage.getItem('nftmint_practice')==='1'||serverForcesDry}
 
-/* ── status ──────────────────────────────────────────────────────────────── */
+/* ── boot / status ─────────────────────────────────────────────────────── */
 async function boot(){
-  try{
-    const h=await api('/api/health');
-    $('deployOut').innerHTML=Object.entries(h.configured).map(([k,v])=>{
-      const norm=k==='upstreamTracker';
-      const cls=norm?'dim':(typeof v==='boolean'?(v?'ok-t':'err-t'):'');
-      return `<div class="kv"><span>${esc(k)}</span><span class="${cls}">${esc(String(v))}${norm&&v===false?' (normal)':''}</span></div>`;
-    }).join('');
-    $('alert').innerHTML=h.problems.length?msg('warn',esc(h.problems.join(' · '))):'';
-    if(!h.configured.apiToken||!tok())$('setup').open=true;
-
-    // The page bakes in the version it was built as; the server reports the one
-    // it is running. A mismatch means this HTML came from a cache, which
-    // otherwise looks like the app misbehaving.
-    if(h.build){
-      const stale=h.build.uiVersion!==PAGE_VERSION;
-      $('build').innerHTML=` · build ${esc(h.build.commit)} (${esc(h.build.uiVersion)})`+
-        (stale?` <span class="err-t">— this page is cached and out of date. Hard-refresh with Ctrl/Cmd+Shift+R.</span>`:'');
+  try {
+    var h = await api('/api/health');
+    var rows = [], keys = Object.keys(h.configured);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i], v = h.configured[k];
+      var normal = k === 'upstreamTracker';
+      var cls = normal ? 'dim' : (typeof v === 'boolean' ? (v ? 'ok-t' : 'err-t') : '');
+      var suffix = (normal && v === false) ? ' (normal)' : '';
+      rows.push(kv(k, esc(String(v)) + suffix, cls));
     }
-  }catch(e){$('alert').innerHTML=msg('err',esc(e.message))}
+    $('deployOut').innerHTML = rows.join('');
+    $('alert').innerHTML = h.problems.length ? msg('warn', esc(h.problems.join(' · '))) : '';
+    if (!h.configured.apiToken || !tok()) $('setup').open = true;
+
+    if (h.build) {
+      var stale = h.build.uiVersion !== PAGE_VERSION;
+      var note = stale
+        ? ' <span class="err-t">— this page is cached. Hard-refresh (Ctrl/Cmd+Shift+R).</span>'
+        : '';
+      $('build').innerHTML = ' · build ' + esc(h.build.commit) + note;
+    }
+  } catch (e) {
+    $('alert').innerHTML = msg('err', esc(e.message));
+  }
 
   renderMode();
-  if(!tok()){$('statusBar').innerHTML='<span class="err-t">Add your access token in Setup below to begin.</span>';
-    renderSettings();return}
-  try{
-    const s=await api('/api/status');
-    defaults=s.criteria;renderSettings();
-    const total=s.wallets.reduce((n,w)=>n+Number(w.balanceEth),0);
-    const funded=s.wallets.filter(w=>Number(w.balanceEth)>0).length;
-    const rtt=s.rpcEndpoints.find(e=>e.medianRttMs!==undefined);
-    const bad=s.observedChainId&&s.observedChainId!==s.chainId;
-    $('statusBar').innerHTML=
-      `<span class="item">network <b class="${bad?'err-t':'ok-t'}">${esc(s.network)}</b></span>`+
-      `<span class="item">block <b>${esc(s.blockNumber??'—')}</b></span>`+
-      `<span class="item">wallets with gas <b class="${funded?'ok-t':'err-t'}">${funded} of ${s.wallets.length}</b></span>`+
-      `<span class="item">total gas <b>${total.toFixed(5)} ETH</b></span>`+
-      (rtt?`<span class="item">speed <b>${rtt.medianRttMs} ms</b></span>`:'')+
-      `<span class="item dim">spend cap ${esc(s.spendCeilingEth)} ETH</span>`;
-    if(bad)$('alert').innerHTML+=msg('err',`Wrong network — the RPC reports chain ${s.observedChainId} but the app expects ${s.chainId}.`);
-    if(!funded)$('alert').innerHTML+=msg('warn','No wallet holds any ETH on this chain, so nothing can be minted yet. ETH must be bridged onto Robinhood Chain — Ethereum mainnet ETH will not appear here.');
-  }catch(e){$('statusBar').innerHTML=`<span class="err-t">${esc(e.message)}</span>`}
-}
 
-/* ── settings form ───────────────────────────────────────────────────────── */
-function renderSettings(){
-  const cur=settings();
-  const val=k=>cur[k]!==undefined?cur[k]:(defaults?defaults[k]:'');
-  let h='';
-  for(const r of RULES){
-    const isCustom=cur[r.key]!==undefined;
-    h+=`<div class="field">
-      <div class="name">${esc(r.label)} <span class="dim" style="font-weight:400">${esc(r.unit)}</span></div>
-      <div class="hint" style="margin-top:4px">${esc(r.why)}</div>
-      <input type="number" value="${esc(val(r.key))}" onchange="setSetting('${r.key}',this.value)">
-      <div class="def">${isCustom?`changed — default is ${esc(defaults?defaults[r.key]:'?')}`:'using the default'}</div>
-    </div>`;
+  if (!tok()) {
+    $('strip').innerHTML = '<span class="err-t">Add your access token in Setup below to begin.</span>';
+    renderRules();
+    return;
   }
-  for(const f of FLAGS){
-    const v=cur[f.key]!==undefined?cur[f.key]==='true':(defaults?Boolean(defaults[f.key]):true);
-    const isCustom=cur[f.key]!==undefined;
-    h+=`<div class="field">
-      <label style="display:flex;gap:8px;align-items:center;margin:0">
-        <input type="checkbox" ${v?'checked':''} style="width:auto"
-               onchange="setSetting('${f.key}',this.checked)">
-        <span class="name">${esc(f.label)}</span>
-      </label>
-      <div class="hint">${esc(f.why)}</div>
-      <div class="def">${isCustom?`changed — default is ${defaults&&defaults[f.key]?'on':'off'}`:'using the default'}</div>
-    </div>`;
+
+  try {
+    var s = await api('/api/status');
+    defaults = s.criteria;
+    renderRules();
+
+    var total = 0, funded = 0;
+    for (var w = 0; w < s.wallets.length; w++) {
+      var bal = Number(s.wallets[w].balanceEth);
+      total += bal;
+      if (bal > 0) funded++;
+    }
+    var rtt = null;
+    for (var e2 = 0; e2 < s.rpcEndpoints.length; e2++) {
+      if (s.rpcEndpoints[e2].medianRttMs !== undefined) { rtt = s.rpcEndpoints[e2].medianRttMs; break; }
+    }
+    var wrong = s.observedChainId && s.observedChainId !== s.chainId;
+
+    var stats = [];
+    stats.push(stat('network', esc(s.network), wrong ? 'err-t' : 'ok-t'));
+    stats.push(stat('block', esc(s.blockNumber || '—'), ''));
+    stats.push(stat('wallets with gas', funded + ' of ' + s.wallets.length, funded ? 'ok-t' : 'err-t'));
+    stats.push(stat('total gas', total.toFixed(5) + ' ETH', ''));
+    if (rtt !== null) stats.push(stat('speed', rtt + ' ms', ''));
+    stats.push(stat('spend cap', esc(s.spendCeilingEth) + ' ETH', 'dim'));
+    $('strip').innerHTML = stats.join('');
+
+    if (wrong) {
+      $('alert').innerHTML += msg('err', 'Wrong network — the RPC reports chain ' +
+        esc(s.observedChainId) + ' but the app expects ' + esc(s.chainId) + '.');
+    }
+    if (!funded) {
+      $('alert').innerHTML += msg('warn', 'No wallet holds ETH on this chain, so nothing can be minted. ' +
+        'ETH must be bridged onto Robinhood Chain — Ethereum mainnet ETH will not appear here.');
+    }
+  } catch (e) {
+    $('strip').innerHTML = '<span class="err-t">' + esc(e.message) + '</span>';
   }
-  $('settingsForm').innerHTML=h;
+}
+function stat(k, v, cls){
+  return '<div class="stat"><span class="k">' + esc(k) + '</span>' +
+         '<span class="v ' + (cls || '') + '">' + v + '</span></div>';
 }
 
-/* ── hunting ─────────────────────────────────────────────────────────────── */
-function toggleHunt(){hunting?stopHunt():startHunt()}
-function startHunt(){
-  if(!isPractice()&&!confirm(
-    'Live mode: this will spend real ETH from your wallets, automatically, whenever a '+
-    'collection passes every rule.\n\nThe server still caps total spending.\n\nStart hunting?'))return;
-  hunting=true;$('btnHunt').textContent='Stop hunting';$('btnHunt').className='stop xl';
-  log(isPractice()?'Started in practice mode — it will not buy.':'Started LIVE — it will buy.',
-      isPractice()?'warn-t':'ok-t');
-  cycle();
+/* ── plan ──────────────────────────────────────────────────────────────── */
+function onTargetInput(){
+  clearTimeout(planTimer);
+  $('btnMint').disabled = true;
+  plan = null;
+  if ($('target').value.trim().length >= 42) planTimer = setTimeout(doPlan, 650);
 }
-function stopHunt(){hunting=false;$('btnHunt').textContent='Start hunting';$('btnHunt').className='go xl';
-  $('huntState').textContent='';$('huntState').className='dim';log('Stopped.','dim')}
-
-function huntQuery(){
-  const q=new URLSearchParams({dryRun:String(isPractice())});
-  for(const [k,v] of Object.entries(settings()))q.set(k,v);
-  return q.toString();
-}
-async function cycle(){
-  $('huntState').textContent=`round ${++cycles} — listening to the chain…`;
-  $('huntState').className='dim pulse';
-  try{
-    const r=await api('/api/hunt?'+huntQuery());
-    if(r.serverForcesDryRun&&!serverForcesDry){serverForcesDry=true;renderMode()}
-    renderHunt(r);
-    log(`${r.observed.mintsSeen} mints seen · ${r.candidates.length} checked · ${r.qualified} passed`+
-        (r.mintedCollections?` · ${r.mintedCollections} BOUGHT`:''),r.mintedCollections?'ok-t':'');
-    if(!r.feedConnected)log('Could not reach the chain feed this round.','err-t');
-    if(r.mintedCollections)boot();
-  }catch(e){
-    log('Error: '+e.message,'err-t');
-    $('huntOut').innerHTML=msg('err',esc(e.message));
-    if(/token|unauthor/i.test(e.message)){stopHunt();return}
-  }
-  $('huntState').textContent='';$('huntState').className='dim';
-  if(hunting)setTimeout(cycle,1200);
-}
-
-function tag(s){const m={live:['t-live','minting now'],slowing:['t-slow','slowing down'],quiet:['t-quiet','stopped']};
-  const[c,t]=m[s]||['t-quiet',s];return `<span class="tag ${c}">${t}</span>`}
-function dur(s){if(!isFinite(s))return'—';return s<60?Math.round(s)+'s':s<3600?Math.round(s/60)+'m':(s/3600).toFixed(1)+'h'}
-
-function renderHunt(r){
-  let h='';
-  if(r.dryRun)h+=msg('info','Practice mode — nothing was bought this round.');
-  if(!r.candidates.length){$('huntOut').innerHTML=h+msg('info',esc(r.note));return}
-  h+='<div class="wrap"><table><thead><tr><th>Collection</th><th>Still going?</th><th>Speed</th>'+
-     '<th>Wallets</th><th>Left</th><th>Sells out in</th><th>Verdict</th></tr></thead><tbody>';
-  r.candidates.forEach(c=>{
-    const col=c.collection,i=c.info||{};
-    const left=i.soldOut?'<span class="err-t">sold out</span>'
-      :(i.remaining!==undefined?esc(i.remaining):'<span class="dim">unknown</span>');
-    h+=`<tr><td><a href="#" onclick="pick('${esc(col.contract)}');return false">${esc(shortAddr(col.contract))}</a>
-        ${i.name?`<div class="dim" style="font-size:11px">${esc(i.name)}</div>`:''}</td>
-        <td>${tag(col.status)}</td><td>${col.attemptsPerMinute}/min</td><td>${col.uniqueMinters}</td>
-        <td>${left}</td><td>${c.evaluation.projectedSelloutSec!==undefined?dur(c.evaluation.projectedSelloutSec):'—'}</td>
-        <td><span class="tag ${c.evaluation.passed?'t-buy':'t-skip'}">${c.evaluation.passed?'BUY':'skip'}</span></td></tr>
-      <tr><td colspan="7" style="padding-top:0"><details class="plain"><summary>${esc(c.evaluation.reason)}</summary>`+
-      c.evaluation.checks.map(k=>`<div class="chk">
-        <span class="${k.skipped?'dim':(k.passed?'ok-t':'err-t')}">${k.skipped?'–':(k.passed?'✓':'✗')}</span>
-        <span><b>${esc(k.name)}</b> — ${esc(k.actual)} <span class="dim">(needs ${esc(k.required)})</span>
-        <div class="why">${esc(k.why)}</div></span></div>`).join('')+
-      (c.minted?mintedBlock(c.minted):'')+'</details></td></tr>`;
-  });
-  $('huntOut').innerHTML=h+'</tbody></table></div>';
-}
-function mintedBlock(m){
-  if(m.error&&!m.attempted)return msg('warn',esc(m.error));
-  let h=msg(m.confirmed?'ok':'warn',`${m.confirmed} confirmed of ${m.attempted} sent`);
-  if(m.txs?.length)h+=m.txs.map(t=>`<div style="font-size:12px"><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.hash.slice(0,16))}…</a></div>`).join('');
-  return h;
-}
-function pick(a){$('target').value=a;$('btnMint').disabled=true;doPlan();
-  $('target').scrollIntoView({behavior:'smooth',block:'center'})}
-
-/* ── plan + manual mint ──────────────────────────────────────────────────── */
-let planTimer=null;
-$('target').addEventListener('input',()=>{clearTimeout(planTimer);
-  $('btnMint').disabled=true;plan=null;
-  if($('target').value.trim().length>=42)planTimer=setTimeout(doPlan,600)});
 
 async function doPlan(){
-  const t=$('target').value.trim();
-  if(!t){$('planOut').innerHTML=msg('warn','Paste a contract address or a link first.');return}
-  busy('btnPlan','mintState',true,'reading the contract');
-  $('planOut').innerHTML='';$('mintOut').innerHTML='';
-  try{
-    const p=await api(`/api/plan?target=${encodeURIComponent(t)}&quantity=${$('qty').value||1}`);
-    plan=p;renderPlan(p);$('btnMint').disabled=!p.ready;
-    if(!p.ready)$('advanced').open=true;
-  }catch(e){$('planOut').innerHTML=msg('err',esc(e.message));plan=null}
-  finally{busy('btnPlan','mintState',false)}
-}
-function renderPlan(p){
-  const i=p.info||{};let h='';
-  h+=p.ready?msg('ok',esc(p.advice)):msg(i.soldOut?'err':'warn',esc(p.advice));
-  if(p.blockers?.length)h+=p.blockers.map(b=>msg('warn',esc(b))).join('');
-  h+=`<div class="kv"><span>contract</span><span>${esc(p.contract)} <span class="dim">(${esc(p.resolvedVia)})</span></span></div>`;
-  if(i.name)h+=`<div class="kv"><span>name</span><span>${esc(i.name)}${i.symbol?' ('+esc(i.symbol)+')':''}</span></div>`;
-  if(i.progressPct!==undefined){
-    h+=`<div class="kv"><span>minted so far</span><span>${esc(i.totalSupply?.value)} of ${esc(i.maxSupply?.value)}</span></div>`+
-       `<div class="bar2"><div style="width:${Math.min(i.progressPct,100)}%"></div></div>`+
-       `<div class="hint" style="margin:0 0 6px">${esc(i.remaining)} left · ${i.progressPct.toFixed(1)}% gone</div>`;
+  var t = $('target').value.trim();
+  if (!t) { $('planOut').innerHTML = msg('warn', 'Paste a contract address or link first.'); return; }
+  busy('btnCheck', 'mintState', true, 'reading the contract');
+  $('planOut').innerHTML = '';
+  $('mintOut').innerHTML = '';
+  try {
+    var p = await api('/api/plan?target=' + encodeURIComponent(t) + '&quantity=' + ($('qty').value || 1));
+    plan = p;
+    renderPlan(p);
+    $('btnMint').disabled = !p.ready;
+    if (!p.ready) $('advanced').open = true;
+  } catch (e) {
+    plan = null;
+    $('planOut').innerHTML = msg('err', esc(e.message));
+  } finally {
+    busy('btnCheck', 'mintState', false);
   }
-  if(i.priceWei)h+=`<div class="kv"><span>price each</span><span>${BigInt(i.priceWei.value)===0n?'free':(Number(i.priceWei.value)/1e18)+' ETH'}</span></div>`;
-  if(i.saleOpen)h+=`<div class="kv"><span>sale</span><span class="${i.saleOpen.value?'ok-t':'err-t'}">${i.saleOpen.value?'open':'closed'}</span></div>`;
-  if(i.ownedByWallet!==undefined&&BigInt(i.ownedByWallet)>0n)
-    h+=`<div class="kv"><span>you already own</span><span>${esc(i.ownedByWallet)}</span></div>`;
-  if(p.chosen)h+=`<div class="kv"><span>mint function found</span><span class="ok-t">${esc(p.chosen.signature)}</span></div>`;
-  if(p.tried?.length)h+=`<details class="plain"><summary>It tried ${p.tried.length} known mint functions</summary>`+
-    p.tried.map(t=>`<div class="chk"><span class="${t.outcome==='ok'?'ok-t':'dim'}">${t.outcome==='ok'?'✓':'✗'}</span>
-      <span>${esc(t.signature)} <span class="dim">${esc(t.reason||t.outcome)}</span></span></div>`).join('')+'</details>';
-  $('planOut').innerHTML=h;
 }
 
+function renderPlan(p){
+  var i = p.info || {};
+  var out = [];
+  out.push(p.ready ? msg('ok', esc(p.advice)) : msg(i.soldOut ? 'err' : 'warn', esc(p.advice)));
+  for (var b = 0; b < (p.blockers || []).length; b++) out.push(msg('warn', esc(p.blockers[b])));
+
+  out.push(kv('contract', esc(p.contract) + ' <span class="dim">(' + esc(p.resolvedVia) + ')</span>'));
+  if (i.name) out.push(kv('name', esc(i.name) + (i.symbol ? ' (' + esc(i.symbol) + ')' : '')));
+  if (i.progressPct !== undefined) {
+    var sup = i.totalSupply ? i.totalSupply.value : '?';
+    var max = i.maxSupply ? i.maxSupply.value : '?';
+    out.push(kv('minted', esc(sup) + ' of ' + esc(max)));
+    out.push('<div class="meter"><div style="width:' + Math.min(i.progressPct, 100) + '%"></div></div>');
+    out.push('<div class="hint" style="margin:0">' + esc(i.remaining) + ' left · ' +
+             i.progressPct.toFixed(1) + '% gone</div>');
+  }
+  if (i.priceWei) {
+    var wei = Number(i.priceWei.value);
+    out.push(kv('price each', wei === 0 ? 'free' : (wei / 1e18) + ' ETH'));
+  }
+  if (i.saleOpen) out.push(kv('sale', i.saleOpen.value ? 'open' : 'closed', i.saleOpen.value ? 'ok-t' : 'err-t'));
+  if (i.ownedByWallet !== undefined && Number(i.ownedByWallet) > 0) {
+    out.push(kv('you already own', esc(i.ownedByWallet)));
+  }
+  if (p.chosen) out.push(kv('mint call found', esc(p.chosen.signature), 'ok-t'));
+
+  if (p.tried && p.tried.length) {
+    var lines = [];
+    for (var t2 = 0; t2 < p.tried.length; t2++) {
+      var c = p.tried[t2];
+      var ok = c.outcome === 'ok';
+      lines.push('<div class="chk"><span class="' + (ok ? 'ok-t' : 'dim') + '">' + (ok ? '✓' : '✗') + '</span>' +
+                 '<span>' + esc(c.signature) + ' <span class="dim">' + esc(c.reason || c.outcome) + '</span></span></div>');
+    }
+    out.push('<details class="bare"><summary>Tried ' + p.tried.length + ' known mint functions</summary>' +
+             lines.join('') + '</details>');
+  }
+  $('planOut').innerHTML = out.join('');
+}
+
+/* ── mint ──────────────────────────────────────────────────────────────── */
 async function doMint(){
-  const practice=isPractice();
-  if(!practice&&!confirm(`This spends real ETH now.\n\n${plan?.info?.name||plan?.contract||''}\nQuantity: ${$('qty').value}\n\nContinue?`))return;
-  busy('btnMint','mintState',true,practice?'signing (not sending)':'minting');$('mintOut').innerHTML='';
-  try{
-    const body={quantity:$('qty').value,dryRun:String(practice),requireSimulation:'true'};
-    if(plan?.contract)body.contract=plan.contract;
-    const cd=$('calldata').value.trim(),fn=$('fn').value.trim();
-    if(cd)body.calldata=cd;
-    else if(fn){body.mintFunction=fn;body.mintArgs=$('args').value.trim()}
-    else if(plan?.chosen){body.mintFunction=plan.chosen.signature;body.mintArgs=plan.chosen.args.join(',')}
-    const pr=$('price').value.trim();
-    if(pr)body.priceEth=pr;
-    else if(plan?.chosen)body.valueEth=String(Number(plan.chosen.valueWei)/1e18);
-    if(plan?.chosen?.gasLimit)body.gasLimit=plan.chosen.gasLimit;
+  var practice = isPractice();
+  if (!practice) {
+    var name = (plan && plan.info && plan.info.name) || (plan && plan.contract) || 'this collection';
+    if (!confirm('This spends real ETH now.\n\n' + name + '\nQuantity: ' + $('qty').value + '\n\nContinue?')) return;
+  }
+  busy('btnMint', 'mintState', true, practice ? 'signing (not sending)' : 'minting');
+  $('mintOut').innerHTML = '';
+  try {
+    var body = { quantity: $('qty').value, dryRun: String(practice), requireSimulation: 'true' };
+    if (plan && plan.contract) body.contract = plan.contract;
 
-    const r=await api('/api/mint',{method:'POST',body:JSON.stringify(body)});
-    let h=r.dryRun?msg('warn',`Practice mode — ${r.transactions.length} transaction(s) signed, nothing sent.`)
-      :(r.minted>0?msg('ok',`Minted ${r.minted} of ${r.submitted}.`)
-                  :msg('err',`Nothing confirmed (${r.failed} failed).`));
-    if(r.transactions.length)h+='<div class="wrap"><table><tbody>'+r.transactions.map(t=>
-      `<tr><td>${esc(shortAddr(t.from))}</td><td class="${t.accepted?'ok-t':'err-t'}">${t.accepted?'sent':'rejected'}</td>
-       <td><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.hash.slice(0,14))}…</a></td></tr>`+
-      (t.error?`<tr><td colspan="3" class="err-t">${esc(t.error)}</td></tr>`:'')).join('')+'</tbody></table></div>';
-    $('mintOut').innerHTML=h;boot();
-  }catch(e){$('mintOut').innerHTML=msg('err',esc(e.message))}
-  finally{busy('btnMint','mintState',false)}
+    var cd = $('calldata').value.trim();
+    var fn = $('fn').value.trim();
+    if (cd) body.calldata = cd;
+    else if (fn) { body.mintFunction = fn; body.mintArgs = $('args').value.trim(); }
+    else if (plan && plan.chosen) { body.mintFunction = plan.chosen.signature; body.mintArgs = plan.chosen.args.join(','); }
+
+    var pr = $('price').value.trim();
+    if (pr) body.priceEth = pr;
+    else if (plan && plan.chosen) body.valueEth = String(Number(plan.chosen.valueWei) / 1e18);
+    if (plan && plan.chosen && plan.chosen.gasLimit) body.gasLimit = plan.chosen.gasLimit;
+
+    var r = await api('/api/mint', { method: 'POST', body: JSON.stringify(body) });
+    var out = [];
+    if (r.dryRun) out.push(msg('warn', 'Practice mode — ' + r.transactions.length + ' signed, nothing sent.'));
+    else if (r.minted > 0) out.push(msg('ok', 'Minted ' + r.minted + ' of ' + r.submitted + '.'));
+    else out.push(msg('err', 'Nothing confirmed (' + r.failed + ' failed).'));
+    out.push(txTable(r.transactions));
+    $('mintOut').innerHTML = out.join('');
+    boot();
+  } catch (e) {
+    $('mintOut').innerHTML = msg('err', esc(e.message));
+  } finally {
+    busy('btnMint', 'mintState', false);
+  }
 }
 
-/* ── init ────────────────────────────────────────────────────────────────── */
-if(localStorage.getItem('nftmint_practice')===null)localStorage.setItem('nftmint_practice','0');
-$('token').value=tok();renderTok();renderSettings();boot();
-window.addEventListener('beforeunload',e=>{if(hunting){e.preventDefault();e.returnValue=''}});
+function txTable(txs){
+  if (!txs || !txs.length) return '';
+  var rows = [];
+  for (var i = 0; i < txs.length; i++) {
+    var t = txs[i];
+    rows.push('<tr><td>' + esc(shortAddr(t.from)) + '</td>' +
+      '<td class="' + (t.accepted ? 'ok-t' : 'err-t') + '">' + (t.accepted ? 'sent' : 'rejected') + '</td>' +
+      '<td><a href="' + esc(t.url) + '" target="_blank" rel="noopener">' + esc(t.hash.slice(0,14)) + '…</a></td></tr>');
+    if (t.error) rows.push('<tr><td colspan="3" class="err-t">' + esc(t.error) + '</td></tr>');
+  }
+  return '<div class="tablewrap"><table><tbody>' + rows.join('') + '</tbody></table></div>';
+}
+
+/* ── hunt ──────────────────────────────────────────────────────────────── */
+function toggleHunt(){ if (hunting) stopHunt(); else startHunt(); }
+
+function startHunt(){
+  if (!isPractice()) {
+    var ok = confirm('Live mode: this will spend real ETH automatically whenever a collection ' +
+      'passes every rule.\n\nThe server still caps total spending.\n\nStart hunting?');
+    if (!ok) return;
+  }
+  hunting = true;
+  $('btnHunt').textContent = 'Stop hunting';
+  $('btnHunt').className = 'stopbtn xl';
+  log(isPractice() ? 'Started in practice mode — it will not buy.' : 'Started LIVE — it will buy.',
+      isPractice() ? 'warn-t' : 'ok-t');
+  runRound();
+}
+function stopHunt(){
+  hunting = false;
+  $('btnHunt').textContent = 'Start hunting';
+  $('btnHunt').className = 'go xl';
+  $('huntState').innerHTML = '';
+  log('Stopped.', 'dim');
+}
+async function huntOnce(){ await runRound(true); }
+
+function huntQuery(){
+  var q = ['dryRun=' + String(isPractice())];
+  var r = rules(), keys = Object.keys(r);
+  for (var i = 0; i < keys.length; i++) {
+    q.push(encodeURIComponent(keys[i]) + '=' + encodeURIComponent(r[keys[i]]));
+  }
+  return q.join('&');
+}
+
+async function runRound(single){
+  rounds++;
+  $('huntState').innerHTML = '<span class="spin"></span> round ' + rounds + ' — listening to the chain…';
+  $('btnOnce').disabled = true;
+  try {
+    var r = await api('/api/hunt?' + huntQuery());
+    if (r.serverForcesDryRun && !serverDry) { serverDry = true; renderMode(); }
+    if (r.skipped) {
+      log('Skipped — a round was already running.', 'dim');
+    } else {
+      renderHunt(r);
+      var line = r.observed.mintsSeen + ' mints seen · ' + r.candidates.length + ' checked · ' +
+                 r.qualified + ' passed' + (r.mintedCollections ? ' · ' + r.mintedCollections + ' BOUGHT' : '');
+      log(line, r.mintedCollections ? 'ok-t' : '');
+      if (!r.feedConnected) log('Could not reach the chain feed this round.', 'err-t');
+      if (r.mintedCollections) boot();
+    }
+  } catch (e) {
+    log('Error: ' + e.message, 'err-t');
+    $('huntOut').innerHTML = msg('err', esc(e.message));
+    if (/token|unauthor/i.test(e.message)) { stopHunt(); $('btnOnce').disabled = false; return; }
+  }
+  $('huntState').innerHTML = '';
+  $('btnOnce').disabled = false;
+  if (!single && hunting) setTimeout(runRound, 1200);
+}
+
+function pill(status){
+  if (status === 'live') return '<span class="pill p-live">minting now</span>';
+  if (status === 'slowing') return '<span class="pill p-slow">slowing</span>';
+  return '<span class="pill p-quiet">stopped</span>';
+}
+
+function renderHunt(r){
+  var out = [];
+  if (r.dryRun) out.push(msg('info', 'Practice mode — nothing was bought this round.'));
+  if (!r.candidates.length) {
+    $('huntOut').innerHTML = out.join('') + msg('info', esc(r.note));
+    return;
+  }
+  var rows = [];
+  for (var i = 0; i < r.candidates.length; i++) rows.push(candidateRows(r.candidates[i]));
+  out.push('<div class="tablewrap"><table><thead><tr>' +
+    '<th>Collection</th><th>Still going?</th><th>Speed</th><th>Wallets</th>' +
+    '<th>Left</th><th>Sells out</th><th>Verdict</th></tr></thead><tbody>' +
+    rows.join('') + '</tbody></table></div>');
+  $('huntOut').innerHTML = out.join('');
+}
+
+function candidateRows(c){
+  var col = c.collection, info = c.info || {}, ev = c.evaluation;
+  var left = info.soldOut ? '<span class="err-t">sold out</span>'
+    : (info.remaining !== undefined ? esc(info.remaining) : '<span class="dim">unknown</span>');
+  var sellout = ev.projectedSelloutSec !== undefined ? fmtDur(ev.projectedSelloutSec) : '—';
+  var nameLine = info.name ? '<div class="dim" style="font-size:11px">' + esc(info.name) + '</div>' : '';
+  var verdict = ev.passed ? '<span class="pill p-buy">buy</span>' : '<span class="pill p-skip">skip</span>';
+
+  var main = '<tr>' +
+    '<td><a href="#" onclick="pick(\'' + esc(col.contract) + '\');return false">' +
+      esc(shortAddr(col.contract)) + '</a>' + nameLine + '</td>' +
+    '<td>' + pill(col.status) + '</td>' +
+    '<td>' + esc(col.attemptsPerMinute) + '/min</td>' +
+    '<td>' + esc(col.uniqueMinters) + '</td>' +
+    '<td>' + left + '</td>' +
+    '<td>' + esc(sellout) + '</td>' +
+    '<td>' + verdict + '</td></tr>';
+
+  var checks = [];
+  for (var k = 0; k < ev.checks.length; k++) {
+    var ch = ev.checks[k];
+    var mark = ch.skipped ? '–' : (ch.passed ? '✓' : '✗');
+    var cls = ch.skipped ? 'dim' : (ch.passed ? 'ok-t' : 'err-t');
+    checks.push('<div class="chk"><span class="' + cls + '">' + mark + '</span>' +
+      '<span><b>' + esc(ch.name) + '</b> — ' + esc(ch.actual) +
+      ' <span class="dim">(needs ' + esc(ch.required) + ')</span>' +
+      '<div class="why">' + esc(ch.why) + '</div></span></div>');
+  }
+  var minted = c.minted ? mintedBlock(c.minted) : '';
+  var detail = '<tr><td colspan="7" style="padding-top:0">' +
+    '<details class="bare"><summary>' + esc(ev.reason) + '</summary>' +
+    checks.join('') + minted + '</details></td></tr>';
+
+  return main + detail;
+}
+
+function mintedBlock(m){
+  if (m.error && !m.attempted) return msg('warn', esc(m.error));
+  var head = msg(m.confirmed ? 'ok' : 'warn', m.confirmed + ' confirmed of ' + m.attempted + ' sent');
+  var links = [];
+  for (var i = 0; i < (m.txs || []).length; i++) {
+    links.push('<div style="font-size:12px"><a href="' + esc(m.txs[i].url) +
+      '" target="_blank" rel="noopener">' + esc(m.txs[i].hash.slice(0,16)) + '…</a></div>');
+  }
+  return head + links.join('');
+}
+
+function pick(addr){
+  $('target').value = addr;
+  $('btnMint').disabled = true;
+  doPlan();
+  $('target').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/* ── init ──────────────────────────────────────────────────────────────── */
+if (localStorage.getItem('nftmint_practice') === null) localStorage.setItem('nftmint_practice', '0');
+$('token').value = tok();
+$('target').addEventListener('input', onTargetInput);
+window.addEventListener('beforeunload', function(e){ if (hunting) { e.preventDefault(); e.returnValue = ''; } });
+renderTok();
+renderRules();
+boot();
 </script>
 </body>
 </html>
