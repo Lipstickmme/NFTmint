@@ -12,27 +12,44 @@
   @media(prefers-color-scheme:light){:root{
     --bg:#f6f7f9;--panel:#fff;--panel2:#f1f3f7;--fg:#14171f;--dim:#5b6376;--line:#e2e5ec}}
   *{box-sizing:border-box}
-  body{margin:0 auto;max-width:840px;padding:20px;background:var(--bg);color:var(--fg);
-       font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+  body{margin:0 auto;max-width:860px;padding:20px;background:var(--bg);color:var(--fg);
+       font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
   code,.mono,input,textarea,table{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   h1{font-size:17px;margin:0}
-  h2{font-size:12px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)}
+  h2{font-size:12px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)}
+  p{margin:0 0 10px}
   .dim{color:var(--dim)} .ok-t{color:var(--ok)} .err-t{color:var(--err)} .warn-t{color:var(--warn)}
-  .hint{color:var(--dim);font-size:12px;margin-top:6px}
+  .lead{color:var(--dim);font-size:13px;margin-bottom:14px}
+  .hint{color:var(--dim);font-size:12px;margin-top:6px;line-height:1.5}
+  .def{font-size:11px;color:var(--dim);opacity:.85}
 
   .bar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:10px 14px;
        background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin:14px 0}
-  .bar .item{font-size:12px} .bar .item b{font-weight:600}
+  .bar .item{font-size:12px}
+
+  .mode{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--r);
+        margin:14px 0;border:1px solid;font-size:13px}
+  .mode.live{border-color:var(--err);background:rgba(255,107,107,.07)}
+  .mode.practice{border-color:var(--warn);background:rgba(255,180,84,.07)}
+  .mode b{font-weight:700}
+  .switch{margin-left:auto}
 
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
          padding:18px;margin-bottom:14px}
-  input,textarea{width:100%;padding:10px 12px;background:var(--bg);color:var(--fg);
+  .step{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;
+        border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;margin-right:7px}
+
+  input,textarea,select{width:100%;padding:10px 12px;background:var(--bg);color:var(--fg);
                  border:1px solid var(--line);border-radius:8px;font-size:13px}
   input.big{font-size:15px;padding:13px 14px}
   textarea{min-height:54px;resize:vertical}
   label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
   .qty{width:110px;flex:none}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-top:12px}
+  .field{border-top:1px solid var(--line);padding-top:12px}
+  .field input{margin-top:6px}
+  .field .name{font-size:13px;font-weight:600}
 
   button{padding:10px 18px;border-radius:8px;border:1px solid var(--line);background:var(--bg);
          color:var(--fg);cursor:pointer;font-size:13px;font-weight:500}
@@ -43,6 +60,7 @@
   button.go{background:var(--ok);border-color:var(--ok);color:#04231a}
   button.stop{background:var(--err);border-color:var(--err);color:#fff}
   button.xl{font-size:15px;padding:13px 26px}
+  button.link{background:none;border:none;color:var(--accent);padding:0;font-size:12px}
 
   .msg{padding:10px 12px;border-radius:8px;font-size:13px;margin:10px 0;border:1px solid}
   .msg.ok{color:var(--ok);border-color:var(--ok)} .msg.err{color:var(--err);border-color:var(--err)}
@@ -70,10 +88,11 @@
   .t-skip{background:rgba(139,147,167,.14);color:var(--dim)}
 
   details{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+  details.plain{border:none;padding-top:0}
   summary{cursor:pointer;color:var(--dim);font-size:12px}
   .chk{display:grid;grid-template-columns:14px 1fr;gap:8px;padding:4px 0;font-size:12px}
   .chk .why{grid-column:2;color:var(--dim);font-size:11px}
-  .log{max-height:200px;overflow-y:auto;font-size:12px;margin-top:10px}
+  .log{max-height:190px;overflow-y:auto;font-size:12px;margin-top:10px}
   .log div{padding:3px 0;border-bottom:1px solid var(--line)}
   .pulse{animation:p 1.3s ease-in-out infinite}@keyframes p{0%,100%{opacity:1}50%{opacity:.45}}
   footer{color:var(--dim);font-size:12px;margin-top:22px}
@@ -82,89 +101,125 @@
 <body>
 
 <h1>NFTmint <span class="dim" style="font-weight:400;font-size:13px">· Robinhood Chain</span></h1>
+<div class="lead">
+  On this chain mints are won by <b>arriving first</b>, not by paying more — so the bot
+  prepares everything in advance and sends the instant it decides to buy.
+</div>
 
 <div class="bar" id="statusBar"><span class="dim">connecting…</span></div>
+<div id="modeBar"></div>
 <div id="alert"></div>
 
-<!-- ───────── MINT ───────── -->
+<!-- ───────── AUTO-HUNT ───────── -->
 <div class="panel">
-  <h2>Mint a collection</h2>
-  <label for="target">Contract address or link</label>
-  <input id="target" class="big" placeholder="0x… — or paste any link containing the address" spellcheck="false">
-  <div class="hint">Paste it and the bot reads the contract itself: price, supply left, whether the sale is open, and which mint function actually works.</div>
+  <h2><span class="step">1</span>Auto-hunt — let it find and buy mints for you</h2>
+  <p class="dim" style="font-size:13px">
+    Press start and it runs on its own. Each round it listens to the chain for about
+    35 seconds to see what is being minted right now, checks each collection against
+    the rules below, and buys the ones that pass — from every wallet that has gas.
+    It keeps going until you stop it.
+  </p>
+  <p class="hint" style="margin-top:0">
+    <b>You do not need to configure anything to start.</b> The settings below already hold
+    sensible defaults chosen to catch fast-selling free mints. Open
+    <b>Adjust the rules</b> only if you want it stricter or looser.
+  </p>
 
   <div class="row">
-    <input id="qty" class="qty" type="number" min="1" value="1" title="How many">
-    <button class="p" id="btnPlan" onclick="doPlan()">Check</button>
+    <button class="go xl" id="btnHunt" onclick="toggleHunt()">Start hunting</button>
+    <span id="huntState" class="dim" style="font-size:12px"></span>
+  </div>
+
+  <div id="huntOut"></div>
+  <div class="log" id="log"><span class="dim">Nothing yet — press Start hunting.</span></div>
+
+  <details id="settings">
+    <summary><b>Adjust the rules</b> — what counts as a mint worth buying</summary>
+    <p class="hint">
+      Every rule must pass before it buys. Each one rules out a different way of being
+      wrong. Changes apply to the next round and are saved in this browser only.
+      <b>Money limits are not here</b> — the spend cap and price ceiling live on the
+      server so a browser can never widen them.
+    </p>
+    <div class="grid" id="settingsForm"></div>
+    <div class="row">
+      <button onclick="resetSettings()">Reset to defaults</button>
+      <span id="settingsState" class="dim" style="font-size:12px"></span>
+    </div>
+  </details>
+</div>
+
+<!-- ───────── MANUAL MINT ───────── -->
+<div class="panel">
+  <h2><span class="step">2</span>Or mint one collection yourself</h2>
+  <p class="dim" style="font-size:13px">
+    Already know what you want? Paste it here. The bot reads the contract itself — the
+    price, how many are left, whether the sale is open, and which mint function works —
+    so you do not need to know anything technical about it.
+  </p>
+
+  <label for="target" style="margin-top:12px">Contract address or link</label>
+  <input id="target" class="big" placeholder="0x… — or paste any link that contains the address" spellcheck="false">
+  <div class="hint">Works with a plain address, an explorer link, or a marketplace item link.</div>
+
+  <div class="row">
+    <input id="qty" class="qty" type="number" min="1" value="1" title="How many to mint">
+    <button class="p" id="btnPlan" onclick="doPlan()">Check it</button>
     <button class="p xl" id="btnMint" onclick="doMint()" disabled>Mint</button>
-    <label style="display:flex;align-items:center;gap:7px;margin:0">
-      <input type="checkbox" id="dry" checked style="width:auto"> <span class="dim" style="font-size:12px">Practice mode</span>
-    </label>
     <span id="mintState" class="dim" style="font-size:12px"></span>
   </div>
+  <div class="hint"><b>Check it</b> only reads — it never spends. The Mint button unlocks once a working mint call is found.</div>
 
   <div id="planOut"></div>
   <div id="mintOut"></div>
 
   <details id="advanced">
-    <summary>Advanced — override the mint call</summary>
-    <div class="hint">Only needed if the automatic check cannot work it out. Copy <b>Input Data</b> from a successful mint transaction on the explorer.</div>
+    <summary>Advanced — set the mint call by hand</summary>
+    <p class="hint">
+      Only needed if the automatic check cannot work a contract out. Open any successful
+      mint transaction for it on the block explorer, find <b>Input Data</b>, and copy the
+      hex string here.
+    </p>
     <label style="margin-top:10px" for="calldata">Raw calldata</label>
     <textarea id="calldata" placeholder="0x…" spellcheck="false"></textarea>
-    <label style="margin-top:10px" for="fn">…or function signature</label>
+    <label style="margin-top:10px" for="fn">…or the function signature</label>
     <input id="fn" placeholder="mint(uint256)" spellcheck="false">
-    <label style="margin-top:10px" for="args">Arguments (comma separated, $SENDER for your address)</label>
+    <label style="margin-top:10px" for="args">Its arguments — comma separated, <code>$SENDER</code> means your address</label>
     <input id="args" placeholder="1" spellcheck="false">
-    <label style="margin-top:10px" for="price">Price per token (ETH)</label>
+    <label style="margin-top:10px" for="price">Price per token in ETH</label>
     <input id="price" placeholder="0" inputmode="decimal">
-  </details>
-</div>
-
-<!-- ───────── AUTO-HUNT ───────── -->
-<div class="panel">
-  <h2>Auto-hunt</h2>
-  <div class="dim" style="font-size:13px">
-    Watches live minting, judges every collection, and mints the ones that qualify —
-    automatically, from every wallet that has gas.
-  </div>
-  <div class="row">
-    <button class="go xl" id="btnHunt" onclick="toggleHunt()">Start hunting</button>
-    <label style="display:flex;align-items:center;gap:7px;margin:0">
-      <input type="checkbox" id="huntDry" checked style="width:auto"> <span class="dim" style="font-size:12px">Practice mode</span>
-    </label>
-    <span id="huntState" class="dim" style="font-size:12px"></span>
-  </div>
-  <div class="hint">
-    Each cycle watches for ~35s then decides. Keeps going while this tab is open.
-    <b>Practice mode</b> does everything except spend — run it first.
-  </div>
-
-  <div id="huntOut"></div>
-  <div class="log" id="log"><span class="dim">—</span></div>
-
-  <details>
-    <summary>What makes a collection qualify?</summary>
-    <div id="criteria" class="hint">…</div>
   </details>
 </div>
 
 <!-- ───────── SETUP ───────── -->
 <details class="panel" id="setup">
-  <summary style="font-size:13px">Setup — access token</summary>
-  <div class="hint" style="margin:10px 0">
-    Minting spends real money, so the server will not act without this. Set <code>API_TOKEN</code>
-    in your Vercel environment variables and paste the same value here. It stays in this browser.
-  </div>
-  <input id="token" type="password" placeholder="paste API_TOKEN" autocomplete="off">
+  <summary style="font-size:13px"><b>Setup</b> — access token and deployment</summary>
+  <p class="hint" style="margin-top:10px">
+    Minting spends real money, so the server refuses to act without a token. Set
+    <code>API_TOKEN</code> in your Vercel environment variables and paste the same value
+    here. It is stored in this browser only and never sent anywhere except your own server.
+  </p>
+  <input id="token" type="password" placeholder="paste your API_TOKEN" autocomplete="off">
   <div class="row">
     <button class="p" onclick="saveToken()">Save</button>
     <button onclick="clearToken()">Clear</button>
     <span id="tokenState" class="dim" style="font-size:12px"></span>
   </div>
-  <div id="deployOut" class="hint" style="margin-top:12px"></div>
+  <div id="deployOut" style="margin-top:14px"></div>
+  <details class="plain">
+    <summary style="margin-top:10px">What do those mean?</summary>
+    <div class="hint">
+      <b>apiToken · privateKeys · rpcUrls</b> — whether each is set on the server. All three
+      must be true before it can mint.<br>
+      <b>network</b> — <code>mainnet</code> spends real ETH; <code>testnet</code> does not.<br>
+      <b>spendCeilingEth</b> — the hard cap on one run, enforced no matter what the browser asks for.<br>
+      <b>upstreamTracker</b> — <span class="ok-t">false is normal.</span> Only true if you also run
+      an always-on tracker on a separate machine.
+    </div>
+  </details>
 </details>
 
-<footer>Practice mode first · burner wallets only · spending capped by <code>MAX_MINT_VALUE_ETH</code></footer>
+<footer>Use burner wallets · spending capped by <code>MAX_MINT_VALUE_ETH</code> on the server</footer>
 
 <script>
 'use strict';
@@ -172,13 +227,47 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const msg=(k,t)=>`<div class="msg ${k}">${t}</div>`;
 const shortAddr=a=>a?a.slice(0,8)+'…'+a.slice(-4):'';
-let hunting=false,plan=null,cycles=0;
+let hunting=false,plan=null,cycles=0,serverForcesDry=false,defaults=null;
+
+/* ── The rules, with plain-English copy and their defaults ───────────────── */
+const RULES=[
+  {key:'minMintsPerMinute',label:'Minimum mint speed',unit:'per minute',
+   why:'How fast people are minting it. A collection selling out moves quickly. Lower this to catch quieter mints, raise it to only chase frantic ones.'},
+  {key:'minUniqueMinters',label:'Minimum different wallets',unit:'wallets',
+   why:'The anti-bot check, and the most useful dial here. 300 mints from 4 wallets is one bot talking to itself; 300 from 150 people is real demand. Raise this if you get junk.'},
+  {key:'minAttemptsInWindow',label:'Minimum mints in the window',unit:'mints',
+   why:'Enough activity in the last few seconds to count as a real rush rather than a trickle.'},
+  {key:'maxAgeSec',label:'Only drops newer than',unit:'seconds',
+   why:'How long ago it started. Joining a mint late usually means the supply is already gone and you are racing for scraps.'},
+  {key:'maxSelloutSec',label:'Must sell out within',unit:'seconds',
+   why:'Supply left divided by how fast it is going. This is the real test of "selling out fast" — minting quickly against unlimited supply is not scarcity. Only applied when the contract reports its supply.'},
+  {key:'maxSupplyProgressPct',label:'Skip if more than',unit:'% already minted',
+   why:'How much is already gone. Past this point you will probably lose the race and pay gas for nothing.'},
+];
+const FLAGS=[
+  {key:'freeOnly',label:'Only buy free mints',
+   why:'Strongly recommended. Your worst case is the gas you spend. Turning this off does NOT let it spend freely — paid mints still need a price ceiling set on the server.'},
+  {key:'requireLive',label:'Must still be minting right now',
+   why:'A gap in activity means it already finished, and the numbers you are looking at are history.'},
+  {key:'requireSaleOpen',label:'Respect the contract’s sale switch',
+   why:'If the contract publishes whether its sale is open, believe it.'},
+  {key:'skipIfOwned',label:'Skip ones you already own',
+   why:'Checked on the chain itself. This is what stops repeated rounds from buying the same collection again and again.'},
+];
 
 function tok(){return localStorage.getItem('nftmint_token')||''}
 function saveToken(){localStorage.setItem('nftmint_token',$('token').value.trim());renderTok();boot()}
 function clearToken(){localStorage.removeItem('nftmint_token');$('token').value='';renderTok()}
-function renderTok(){const t=tok();$('tokenState').textContent=t?`saved (${t.length} chars)`:'not set';
+function renderTok(){const t=tok();$('tokenState').textContent=t?`saved (${t.length} characters)`:'not set';
   $('tokenState').className=t?'ok-t':'err-t'}
+
+function settings(){try{return JSON.parse(localStorage.getItem('nftmint_rules')||'{}')}catch{return{}}}
+function setSetting(k,v){const s=settings();
+  if(v===''||v===null||v===undefined)delete s[k];else s[k]=String(v);
+  localStorage.setItem('nftmint_rules',JSON.stringify(s));
+  $('settingsState').textContent='saved — applies next round';renderSettings()}
+function resetSettings(){localStorage.removeItem('nftmint_rules');
+  $('settingsState').textContent='back to defaults';renderSettings()}
 
 async function api(path,opt={}){
   const h={'content-type':'application/json'};const t=tok();if(t)h.authorization='Bearer '+t;
@@ -193,7 +282,20 @@ function log(t,cls){const el=$('log');if(el.querySelector('.dim'))el.innerHTML='
   d.textContent=new Date().toLocaleTimeString()+'  '+t;el.prepend(d);
   while(el.children.length>60)el.removeChild(el.lastChild)}
 
-// ── status strip ──────────────────────────────────────────────────────────
+/* ── mode banner ─────────────────────────────────────────────────────────── */
+function renderMode(){
+  const practice=localStorage.getItem('nftmint_practice')==='1'||serverForcesDry;
+  $('modeBar').innerHTML=practice
+    ? `<div class="mode practice"><b>Practice mode</b> — it will do everything except actually buy.
+        ${serverForcesDry?'Locked on by the server (<code>HUNT_DRY_RUN=true</code>).':''}
+        <span class="switch">${serverForcesDry?'':'<button class="link" onclick="setPractice(false)">Switch to live buying →</button>'}</span></div>`
+    : `<div class="mode live"><b>Live — real money.</b> It will buy with your wallets, up to the server’s spend cap.
+        <span class="switch"><button class="link" onclick="setPractice(true)">Switch to practice mode →</button></span></div>`;
+}
+function setPractice(on){localStorage.setItem('nftmint_practice',on?'1':'0');renderMode()}
+function isPractice(){return localStorage.getItem('nftmint_practice')==='1'||serverForcesDry}
+
+/* ── status ──────────────────────────────────────────────────────────────── */
 async function boot(){
   try{
     const h=await api('/api/health');
@@ -206,9 +308,12 @@ async function boot(){
     if(!h.configured.apiToken||!tok())$('setup').open=true;
   }catch(e){$('alert').innerHTML=msg('err',esc(e.message))}
 
-  if(!tok()){$('statusBar').innerHTML='<span class="err-t">Add your access token below to begin.</span>';return}
+  renderMode();
+  if(!tok()){$('statusBar').innerHTML='<span class="err-t">Add your access token in Setup below to begin.</span>';
+    renderSettings();return}
   try{
     const s=await api('/api/status');
+    defaults=s.criteria;renderSettings();
     const total=s.wallets.reduce((n,w)=>n+Number(w.balanceEth),0);
     const funded=s.wallets.filter(w=>Number(w.balanceEth)>0).length;
     const rtt=s.rpcEndpoints.find(e=>e.medianRttMs!==undefined);
@@ -216,126 +321,74 @@ async function boot(){
     $('statusBar').innerHTML=
       `<span class="item">network <b class="${bad?'err-t':'ok-t'}">${esc(s.network)}</b></span>`+
       `<span class="item">block <b>${esc(s.blockNumber??'—')}</b></span>`+
-      `<span class="item">wallets <b class="${funded?'ok-t':'err-t'}">${funded}/${s.wallets.length} funded</b></span>`+
-      `<span class="item">gas <b>${total.toFixed(5)} ETH</b></span>`+
-      (rtt?`<span class="item">latency <b>${rtt.medianRttMs} ms</b></span>`:'')+
-      `<span class="item dim">cap ${esc(s.spendCeilingEth)} ETH</span>`;
-    if(bad)$('alert').innerHTML+=msg('err',`Wrong network: RPC reports chain ${s.observedChainId}, expected ${s.chainId}.`);
-    if(!funded)$('alert').innerHTML+=msg('warn','No wallet has any ETH on this chain. Bridge ETH to Robinhood Chain before minting — mainnet ETH will not appear here.');
-    renderCriteria(s.criteria);
+      `<span class="item">wallets with gas <b class="${funded?'ok-t':'err-t'}">${funded} of ${s.wallets.length}</b></span>`+
+      `<span class="item">total gas <b>${total.toFixed(5)} ETH</b></span>`+
+      (rtt?`<span class="item">speed <b>${rtt.medianRttMs} ms</b></span>`:'')+
+      `<span class="item dim">spend cap ${esc(s.spendCeilingEth)} ETH</span>`;
+    if(bad)$('alert').innerHTML+=msg('err',`Wrong network — the RPC reports chain ${s.observedChainId} but the app expects ${s.chainId}.`);
+    if(!funded)$('alert').innerHTML+=msg('warn','No wallet holds any ETH on this chain, so nothing can be minted yet. ETH must be bridged onto Robinhood Chain — Ethereum mainnet ETH will not appear here.');
   }catch(e){$('statusBar').innerHTML=`<span class="err-t">${esc(e.message)}</span>`}
 }
 
-const WHY={
-  minMintsPerMinute:'How fast people are minting.',
-  minUniqueMinters:'How many different wallets — the anti-bot check. 300 mints from 4 wallets is one bot, not demand.',
-  minAttemptsInWindow:'Enough activity to be a real rush.',
-  maxAgeSec:'Only fresh drops. Joining late means the supply is gone.',
-  requireLive:'Mints must still be landing right now.',
-  maxSelloutSec:'Supply left ÷ current rate. The real test of "selling out fast" — speed against unlimited supply is not scarcity.',
-  maxSupplyProgressPct:'Not already mostly gone, or you pay gas to lose.',
-  freeOnly:'Only free mints, so your downside is gas alone.',
-  maxPriceEth:'Most you will pay per mint when free-only is off.',
-  requireSaleOpen:'Honour the contract’s own sale flag.',
-  skipIfOwned:'Skip what you already hold — stops repeat cycles rebuying.'};
-function renderCriteria(c){
-  $('criteria').innerHTML=Object.entries(c).map(([k,v])=>
-    `<div class="kv"><span>${esc(k)}<br><span style="font-size:11px">${esc(WHY[k]||'')}</span></span>
-     <span class="mono">${esc(String(v))}</span></div>`).join('');
-}
-
-// ── plan ──────────────────────────────────────────────────────────────────
-let planTimer=null;
-$('target').addEventListener('input',()=>{clearTimeout(planTimer);
-  $('btnMint').disabled=true;plan=null;
-  if($('target').value.trim().length>=42)planTimer=setTimeout(doPlan,600)});
-
-async function doPlan(){
-  const t=$('target').value.trim();
-  if(!t){$('planOut').innerHTML=msg('warn','Paste a contract address or link first.');return}
-  busy('btnPlan','mintState',true,'reading the contract');
-  $('planOut').innerHTML='';$('mintOut').innerHTML='';
-  try{
-    const p=await api(`/api/plan?target=${encodeURIComponent(t)}&quantity=${$('qty').value||1}`);
-    plan=p;renderPlan(p);
-    $('btnMint').disabled=!p.ready;
-    if(!p.ready)$('advanced').open=true;
-  }catch(e){$('planOut').innerHTML=msg('err',esc(e.message));plan=null}
-  finally{busy('btnPlan','mintState',false)}
-}
-
-function renderPlan(p){
-  const i=p.info||{};let h='';
-  h+=p.ready?msg('ok',esc(p.advice)):msg(i.soldOut?'err':'warn',esc(p.advice));
-  if(p.blockers?.length)h+=p.blockers.map(b=>msg('warn',esc(b))).join('');
-
-  h+=`<div class="kv"><span>contract</span><span>${esc(p.contract)} <span class="dim">(${esc(p.resolvedVia)})</span></span></div>`;
-  if(i.name)h+=`<div class="kv"><span>name</span><span>${esc(i.name)}${i.symbol?' ('+esc(i.symbol)+')':''}</span></div>`;
-  if(i.progressPct!==undefined){
-    h+=`<div class="kv"><span>minted</span><span>${esc(i.totalSupply?.value)} / ${esc(i.maxSupply?.value)}</span></div>`+
-       `<div class="bar2"><div style="width:${Math.min(i.progressPct,100)}%"></div></div>`+
-       `<div class="hint" style="margin:0 0 6px">${esc(i.remaining)} left · ${i.progressPct.toFixed(1)}% gone</div>`;
+/* ── settings form ───────────────────────────────────────────────────────── */
+function renderSettings(){
+  const cur=settings();
+  const val=k=>cur[k]!==undefined?cur[k]:(defaults?defaults[k]:'');
+  let h='';
+  for(const r of RULES){
+    const isCustom=cur[r.key]!==undefined;
+    h+=`<div class="field">
+      <div class="name">${esc(r.label)} <span class="dim" style="font-weight:400">${esc(r.unit)}</span></div>
+      <div class="hint" style="margin-top:4px">${esc(r.why)}</div>
+      <input type="number" value="${esc(val(r.key))}" onchange="setSetting('${r.key}',this.value)">
+      <div class="def">${isCustom?`changed — default is ${esc(defaults?defaults[r.key]:'?')}`:'using the default'}</div>
+    </div>`;
   }
-  if(i.priceWei)h+=`<div class="kv"><span>price</span><span>${BigInt(i.priceWei.value)===0n?'free':(Number(i.priceWei.value)/1e18)+' ETH'}</span></div>`;
-  if(i.saleOpen)h+=`<div class="kv"><span>sale</span><span class="${i.saleOpen.value?'ok-t':'err-t'}">${i.saleOpen.value?'open':'closed'}</span></div>`;
-  if(i.ownedByWallet!==undefined&&BigInt(i.ownedByWallet)>0n)
-    h+=`<div class="kv"><span>you already hold</span><span>${esc(i.ownedByWallet)}</span></div>`;
-  if(p.chosen)h+=`<div class="kv"><span>mint call</span><span class="ok-t">${esc(p.chosen.signature)}</span></div>`;
-
-  if(p.tried?.length)h+=`<details><summary>Tried ${p.tried.length} mint functions</summary>`+
-    p.tried.map(t=>`<div class="chk"><span class="${t.outcome==='ok'?'ok-t':'dim'}">${t.outcome==='ok'?'✓':'✗'}</span>
-      <span>${esc(t.signature)} <span class="dim">${esc(t.reason||t.outcome)}</span></span></div>`).join('')+'</details>';
-  $('planOut').innerHTML=h;
+  for(const f of FLAGS){
+    const v=cur[f.key]!==undefined?cur[f.key]==='true':(defaults?Boolean(defaults[f.key]):true);
+    const isCustom=cur[f.key]!==undefined;
+    h+=`<div class="field">
+      <label style="display:flex;gap:8px;align-items:center;margin:0">
+        <input type="checkbox" ${v?'checked':''} style="width:auto"
+               onchange="setSetting('${f.key}',this.checked)">
+        <span class="name">${esc(f.label)}</span>
+      </label>
+      <div class="hint">${esc(f.why)}</div>
+      <div class="def">${isCustom?`changed — default is ${defaults&&defaults[f.key]?'on':'off'}`:'using the default'}</div>
+    </div>`;
+  }
+  $('settingsForm').innerHTML=h;
 }
 
-// ── mint ──────────────────────────────────────────────────────────────────
-async function doMint(){
-  const dry=$('dry').checked;
-  if(!dry&&!confirm(`This spends real funds.\n\n${plan?.info?.name||plan?.contract||''}\nCall: ${plan?.chosen?.signature||'manual'}\nQuantity: ${$('qty').value}\n\nContinue?`))return;
-  busy('btnMint','mintState',true,dry?'signing':'minting');$('mintOut').innerHTML='';
-  try{
-    const body={quantity:$('qty').value,dryRun:String(dry),requireSimulation:'true'};
-    if(plan?.contract)body.contract=plan.contract;
-    // Manual overrides win, then whatever the automatic plan worked out.
-    const cd=$('calldata').value.trim(),fn=$('fn').value.trim();
-    if(cd)body.calldata=cd;
-    else if(fn){body.mintFunction=fn;body.mintArgs=$('args').value.trim()}
-    else if(plan?.chosen){body.mintFunction=plan.chosen.signature;body.mintArgs=plan.chosen.args.join(',')}
-    const pr=$('price').value.trim();
-    if(pr)body.priceEth=pr;
-    else if(plan?.chosen)body.valueEth=String(Number(plan.chosen.valueWei)/1e18);
-    if(plan?.chosen?.gasLimit)body.gasLimit=plan.chosen.gasLimit;
-
-    const r=await api('/api/mint',{method:'POST',body:JSON.stringify(body)});
-    let h=r.dryRun?msg('warn',`Practice mode — ${r.transactions.length} signed, nothing sent.`)
-      :(r.minted>0?msg('ok',`Minted ${r.minted} of ${r.submitted}.`)
-                  :msg('err',`No mints confirmed (${r.failed} failed).`));
-    if(r.transactions.length)h+='<div class="wrap"><table><tbody>'+r.transactions.map(t=>
-      `<tr><td>${esc(shortAddr(t.from))}</td><td class="${t.accepted?'ok-t':'err-t'}">${t.accepted?'sent':'rejected'}</td>
-       <td><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.hash.slice(0,14))}…</a></td></tr>`+
-      (t.error?`<tr><td colspan="3" class="err-t">${esc(t.error)}</td></tr>`:'')).join('')+'</tbody></table></div>';
-    $('mintOut').innerHTML=h;
-    boot();
-  }catch(e){$('mintOut').innerHTML=msg('err',esc(e.message))}
-  finally{busy('btnMint','mintState',false)}
-}
-
-// ── hunt ──────────────────────────────────────────────────────────────────
+/* ── hunting ─────────────────────────────────────────────────────────────── */
 function toggleHunt(){hunting?stopHunt():startHunt()}
-function startHunt(){hunting=true;$('btnHunt').textContent='Stop hunting';$('btnHunt').className='stop xl';
-  log('Hunting started'+($('huntDry').checked?' (practice mode)':' — WILL SPEND'),'ok-t');cycle()}
+function startHunt(){
+  if(!isPractice()&&!confirm(
+    'Live mode: this will spend real ETH from your wallets, automatically, whenever a '+
+    'collection passes every rule.\n\nThe server still caps total spending.\n\nStart hunting?'))return;
+  hunting=true;$('btnHunt').textContent='Stop hunting';$('btnHunt').className='stop xl';
+  log(isPractice()?'Started in practice mode — it will not buy.':'Started LIVE — it will buy.',
+      isPractice()?'warn-t':'ok-t');
+  cycle();
+}
 function stopHunt(){hunting=false;$('btnHunt').textContent='Start hunting';$('btnHunt').className='go xl';
-  busy('btnHunt','huntState',false);log('Stopped','dim')}
+  $('huntState').textContent='';$('huntState').className='dim';log('Stopped.','dim')}
 
+function huntQuery(){
+  const q=new URLSearchParams({dryRun:String(isPractice())});
+  for(const [k,v] of Object.entries(settings()))q.set(k,v);
+  return q.toString();
+}
 async function cycle(){
-  $('huntState').textContent=`cycle ${++cycles} — watching…`;$('huntState').className='dim pulse';
+  $('huntState').textContent=`round ${++cycles} — listening to the chain…`;
+  $('huntState').className='dim pulse';
   try{
-    const r=await api(`/api/hunt?dryRun=${$('huntDry').checked}`);
+    const r=await api('/api/hunt?'+huntQuery());
+    if(r.serverForcesDryRun&&!serverForcesDry){serverForcesDry=true;renderMode()}
     renderHunt(r);
-    log(`${r.observed.mintsSeen} mints seen · ${r.candidates.length} judged · ${r.qualified} qualified`+
-        (r.mintedCollections?` · ${r.mintedCollections} MINTED`:''),
-        r.mintedCollections?'ok-t':'');
-    if(!r.feedConnected)log('Could not reach the chain feed','err-t');
+    log(`${r.observed.mintsSeen} mints seen · ${r.candidates.length} checked · ${r.qualified} passed`+
+        (r.mintedCollections?` · ${r.mintedCollections} BOUGHT`:''),r.mintedCollections?'ok-t':'');
+    if(!r.feedConnected)log('Could not reach the chain feed this round.','err-t');
     if(r.mintedCollections)boot();
   }catch(e){
     log('Error: '+e.message,'err-t');
@@ -346,29 +399,29 @@ async function cycle(){
   if(hunting)setTimeout(cycle,1200);
 }
 
-function tag(s){const m={live:['t-live','minting now'],slowing:['t-slow','slowing'],quiet:['t-quiet','stopped']};
+function tag(s){const m={live:['t-live','minting now'],slowing:['t-slow','slowing down'],quiet:['t-quiet','stopped']};
   const[c,t]=m[s]||['t-quiet',s];return `<span class="tag ${c}">${t}</span>`}
 function dur(s){if(!isFinite(s))return'—';return s<60?Math.round(s)+'s':s<3600?Math.round(s/60)+'m':(s/3600).toFixed(1)+'h'}
 
 function renderHunt(r){
   let h='';
-  if(r.dryRun)h+=msg('info','Practice mode — nothing was bought.');
+  if(r.dryRun)h+=msg('info','Practice mode — nothing was bought this round.');
   if(!r.candidates.length){$('huntOut').innerHTML=h+msg('info',esc(r.note));return}
-  h+='<div class="wrap"><table><thead><tr><th>Collection</th><th>Status</th><th>Rate</th>'+
-     '<th>Wallets</th><th>Left</th><th>Sells out</th><th></th></tr></thead><tbody>';
+  h+='<div class="wrap"><table><thead><tr><th>Collection</th><th>Still going?</th><th>Speed</th>'+
+     '<th>Wallets</th><th>Left</th><th>Sells out in</th><th>Verdict</th></tr></thead><tbody>';
   r.candidates.forEach(c=>{
     const col=c.collection,i=c.info||{};
     const left=i.soldOut?'<span class="err-t">sold out</span>'
-      :(i.remaining!==undefined?esc(i.remaining):'<span class="dim">?</span>');
+      :(i.remaining!==undefined?esc(i.remaining):'<span class="dim">unknown</span>');
     h+=`<tr><td><a href="#" onclick="pick('${esc(col.contract)}');return false">${esc(shortAddr(col.contract))}</a>
         ${i.name?`<div class="dim" style="font-size:11px">${esc(i.name)}</div>`:''}</td>
         <td>${tag(col.status)}</td><td>${col.attemptsPerMinute}/min</td><td>${col.uniqueMinters}</td>
         <td>${left}</td><td>${c.evaluation.projectedSelloutSec!==undefined?dur(c.evaluation.projectedSelloutSec):'—'}</td>
         <td><span class="tag ${c.evaluation.passed?'t-buy':'t-skip'}">${c.evaluation.passed?'BUY':'skip'}</span></td></tr>
-      <tr><td colspan="7" style="padding-top:0"><details><summary>${esc(c.evaluation.reason)}</summary>`+
+      <tr><td colspan="7" style="padding-top:0"><details class="plain"><summary>${esc(c.evaluation.reason)}</summary>`+
       c.evaluation.checks.map(k=>`<div class="chk">
         <span class="${k.skipped?'dim':(k.passed?'ok-t':'err-t')}">${k.skipped?'–':(k.passed?'✓':'✗')}</span>
-        <span><b>${esc(k.name)}</b> ${esc(k.actual)} <span class="dim">(needs ${esc(k.required)})</span>
+        <span><b>${esc(k.name)}</b> — ${esc(k.actual)} <span class="dim">(needs ${esc(k.required)})</span>
         <div class="why">${esc(k.why)}</div></span></div>`).join('')+
       (c.minted?mintedBlock(c.minted):'')+'</details></td></tr>`;
   });
@@ -381,10 +434,80 @@ function mintedBlock(m){
   return h;
 }
 function pick(a){$('target').value=a;$('btnMint').disabled=true;doPlan();
-  window.scrollTo({top:0,behavior:'smooth'})}
+  $('target').scrollIntoView({behavior:'smooth',block:'center'})}
 
-// ── init ──────────────────────────────────────────────────────────────────
-$('token').value=tok();renderTok();boot();
+/* ── plan + manual mint ──────────────────────────────────────────────────── */
+let planTimer=null;
+$('target').addEventListener('input',()=>{clearTimeout(planTimer);
+  $('btnMint').disabled=true;plan=null;
+  if($('target').value.trim().length>=42)planTimer=setTimeout(doPlan,600)});
+
+async function doPlan(){
+  const t=$('target').value.trim();
+  if(!t){$('planOut').innerHTML=msg('warn','Paste a contract address or a link first.');return}
+  busy('btnPlan','mintState',true,'reading the contract');
+  $('planOut').innerHTML='';$('mintOut').innerHTML='';
+  try{
+    const p=await api(`/api/plan?target=${encodeURIComponent(t)}&quantity=${$('qty').value||1}`);
+    plan=p;renderPlan(p);$('btnMint').disabled=!p.ready;
+    if(!p.ready)$('advanced').open=true;
+  }catch(e){$('planOut').innerHTML=msg('err',esc(e.message));plan=null}
+  finally{busy('btnPlan','mintState',false)}
+}
+function renderPlan(p){
+  const i=p.info||{};let h='';
+  h+=p.ready?msg('ok',esc(p.advice)):msg(i.soldOut?'err':'warn',esc(p.advice));
+  if(p.blockers?.length)h+=p.blockers.map(b=>msg('warn',esc(b))).join('');
+  h+=`<div class="kv"><span>contract</span><span>${esc(p.contract)} <span class="dim">(${esc(p.resolvedVia)})</span></span></div>`;
+  if(i.name)h+=`<div class="kv"><span>name</span><span>${esc(i.name)}${i.symbol?' ('+esc(i.symbol)+')':''}</span></div>`;
+  if(i.progressPct!==undefined){
+    h+=`<div class="kv"><span>minted so far</span><span>${esc(i.totalSupply?.value)} of ${esc(i.maxSupply?.value)}</span></div>`+
+       `<div class="bar2"><div style="width:${Math.min(i.progressPct,100)}%"></div></div>`+
+       `<div class="hint" style="margin:0 0 6px">${esc(i.remaining)} left · ${i.progressPct.toFixed(1)}% gone</div>`;
+  }
+  if(i.priceWei)h+=`<div class="kv"><span>price each</span><span>${BigInt(i.priceWei.value)===0n?'free':(Number(i.priceWei.value)/1e18)+' ETH'}</span></div>`;
+  if(i.saleOpen)h+=`<div class="kv"><span>sale</span><span class="${i.saleOpen.value?'ok-t':'err-t'}">${i.saleOpen.value?'open':'closed'}</span></div>`;
+  if(i.ownedByWallet!==undefined&&BigInt(i.ownedByWallet)>0n)
+    h+=`<div class="kv"><span>you already own</span><span>${esc(i.ownedByWallet)}</span></div>`;
+  if(p.chosen)h+=`<div class="kv"><span>mint function found</span><span class="ok-t">${esc(p.chosen.signature)}</span></div>`;
+  if(p.tried?.length)h+=`<details class="plain"><summary>It tried ${p.tried.length} known mint functions</summary>`+
+    p.tried.map(t=>`<div class="chk"><span class="${t.outcome==='ok'?'ok-t':'dim'}">${t.outcome==='ok'?'✓':'✗'}</span>
+      <span>${esc(t.signature)} <span class="dim">${esc(t.reason||t.outcome)}</span></span></div>`).join('')+'</details>';
+  $('planOut').innerHTML=h;
+}
+
+async function doMint(){
+  const practice=isPractice();
+  if(!practice&&!confirm(`This spends real ETH now.\n\n${plan?.info?.name||plan?.contract||''}\nQuantity: ${$('qty').value}\n\nContinue?`))return;
+  busy('btnMint','mintState',true,practice?'signing (not sending)':'minting');$('mintOut').innerHTML='';
+  try{
+    const body={quantity:$('qty').value,dryRun:String(practice),requireSimulation:'true'};
+    if(plan?.contract)body.contract=plan.contract;
+    const cd=$('calldata').value.trim(),fn=$('fn').value.trim();
+    if(cd)body.calldata=cd;
+    else if(fn){body.mintFunction=fn;body.mintArgs=$('args').value.trim()}
+    else if(plan?.chosen){body.mintFunction=plan.chosen.signature;body.mintArgs=plan.chosen.args.join(',')}
+    const pr=$('price').value.trim();
+    if(pr)body.priceEth=pr;
+    else if(plan?.chosen)body.valueEth=String(Number(plan.chosen.valueWei)/1e18);
+    if(plan?.chosen?.gasLimit)body.gasLimit=plan.chosen.gasLimit;
+
+    const r=await api('/api/mint',{method:'POST',body:JSON.stringify(body)});
+    let h=r.dryRun?msg('warn',`Practice mode — ${r.transactions.length} transaction(s) signed, nothing sent.`)
+      :(r.minted>0?msg('ok',`Minted ${r.minted} of ${r.submitted}.`)
+                  :msg('err',`Nothing confirmed (${r.failed} failed).`));
+    if(r.transactions.length)h+='<div class="wrap"><table><tbody>'+r.transactions.map(t=>
+      `<tr><td>${esc(shortAddr(t.from))}</td><td class="${t.accepted?'ok-t':'err-t'}">${t.accepted?'sent':'rejected'}</td>
+       <td><a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.hash.slice(0,14))}…</a></td></tr>`+
+      (t.error?`<tr><td colspan="3" class="err-t">${esc(t.error)}</td></tr>`:'')).join('')+'</tbody></table></div>';
+    $('mintOut').innerHTML=h;boot();
+  }catch(e){$('mintOut').innerHTML=msg('err',esc(e.message))}
+  finally{busy('btnMint','mintState',false)}
+}
+
+/* ── init ────────────────────────────────────────────────────────────────── */
+if(localStorage.getItem('nftmint_practice')===null)localStorage.setItem('nftmint_practice','0');
+$('token').value=tok();renderTok();renderSettings();boot();
 window.addEventListener('beforeunload',e=>{if(hunting){e.preventDefault();e.returnValue=''}});
 </script>
 </body>

@@ -1,6 +1,7 @@
 import { handleApi, authorize, jsonSafe, type ApiRequest, type ApiResponse } from '../src/http.js';
 import { loadHuntConfig } from '../src/config.js';
 import { runHuntCycle } from '../src/hunt.js';
+import { mergeCriteria } from '../src/criteria.js';
 
 /**
  * /api/hunt — one full cycle: sample the feed, judge every candidate, and mint
@@ -56,21 +57,29 @@ async function runAndRespond(req: ApiRequest, res: ApiResponse): Promise<void> {
     async (_body, query) => {
       const cfg = loadHuntConfig();
 
-      // Query overrides let the UI run a one-off cycle with different settings
-      // without redeploying. They can only narrow what is bought, never widen
-      // it past the environment's own limits.
       const windowSec = Number(query.get('seconds') ?? cfg.windowSec);
       const dryRun = query.get('dryRun') === null ? cfg.dryRun : query.get('dryRun') === 'true';
 
-      return runHuntCycle({
+      // Quality thresholds are adjustable from the Settings panel. Money limits
+      // are not: the per-cycle mint cap, the price ceiling, and the overall
+      // spend ceiling all come from the environment and ignore the query string.
+      const overrides: Record<string, string | undefined> = {};
+      for (const [key, value] of query.entries()) {
+        if (key !== 'seconds' && key !== 'dryRun') overrides[key] = value;
+      }
+      const { criteria, applied } = mergeCriteria(cfg.criteria, overrides);
+
+      const report = await runHuntCycle({
         windowSec: Math.min(Math.max(Number.isFinite(windowSec) ? windowSec : cfg.windowSec, 5), 50),
         inspectTop: cfg.inspectTop,
         maxMintsPerCycle: cfg.maxMintsPerCycle,
-        // Only ever allow tightening: a query string cannot turn a dry run live
-        // if the deployment is configured for dry runs.
+        // An operator can force practice mode server-side with HUNT_DRY_RUN=true,
+        // and then the browser cannot turn it live.
         dryRun: cfg.dryRun ? true : dryRun,
-        criteria: cfg.criteria,
+        criteria,
       });
+
+      return { ...report, appliedOverrides: applied, serverForcesDryRun: cfg.dryRun };
     },
   );
 }

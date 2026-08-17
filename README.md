@@ -308,9 +308,23 @@ repeating hunt safe to loop without a database.
 Tune every threshold via `HUNT_*` environment variables. `HUNT_MIN_UNIQUE_MINTERS`
 is the highest-value dial for filtering out junk.
 
-**Start in practice mode** (`HUNT_DRY_RUN=true`, the default). It watches,
-judges, and signs, but never broadcasts — so you can see what it *would* have
-bought before it spends anything.
+### Defaults, and changing them
+
+The defaults are chosen to catch fast-selling free mints, and **work without
+configuring anything** — press Start hunting and it runs. The UI's
+**Adjust the rules** panel edits every threshold live, explains what each one
+rules out, and shows which you have changed away from the default.
+
+One deliberate split: the browser can change **what the bot looks for**, never
+**how much it can lose**. `MAX_MINT_VALUE_ETH`, `HUNT_MAX_PRICE_ETH`, and
+`HUNT_MAX_MINTS_PER_CYCLE` are server-side only and ignore anything the page
+sends. Turning off free-only in the UI does not grant a budget — paid mints
+still need a price ceiling set in the environment.
+
+**Auto-hunt buys for real by default.** The UI has a practice/live switch
+(practice signs everything but never broadcasts). To force practice mode
+server-side so the browser cannot turn it live — useful when handing someone a
+deployment — set `HUNT_DRY_RUN=true`.
 
 ### What serverless can and can't do here
 

@@ -275,6 +275,79 @@ export function evaluate(
   };
 }
 
+/**
+ * Criteria the UI is allowed to change, with the range each may take.
+ *
+ * These are *quality* dials — they decide what counts as a good mint. Loosening
+ * them means buying more things, which is a strategy choice the operator should
+ * be able to make from the browser.
+ *
+ * The *money* limits are deliberately absent: `maxPriceWei`, the per-cycle mint
+ * cap, and the spend ceiling stay server-side. A browser can change what the
+ * bot looks for, never how much it is allowed to lose.
+ */
+const ADJUSTABLE = {
+  minMintsPerMinute: { min: 0, max: 100_000 },
+  minUniqueMinters: { min: 0, max: 10_000 },
+  minAttemptsInWindow: { min: 0, max: 100_000 },
+  maxAgeSec: { min: 5, max: 86_400 },
+  maxSelloutSec: { min: 10, max: 86_400 },
+  maxSupplyProgressPct: { min: 0, max: 100 },
+} as const;
+
+const ADJUSTABLE_FLAGS = [
+  'requireLive',
+  'requireSaleOpen',
+  'skipIfOwned',
+  'freeOnly',
+] as const;
+
+export type AdjustableKey = keyof typeof ADJUSTABLE | (typeof ADJUSTABLE_FLAGS)[number];
+
+/** Which criteria the UI may edit, and their bounds. For rendering the form. */
+export function adjustableCriteria(): Record<string, unknown> {
+  return {
+    numbers: ADJUSTABLE,
+    flags: ADJUSTABLE_FLAGS,
+  };
+}
+
+/**
+ * Merge user-supplied criteria over the configured defaults.
+ *
+ * Unknown keys are ignored and numbers are clamped, so a malformed or hostile
+ * request degrades to the server's settings rather than doing something wild.
+ */
+export function mergeCriteria(
+  base: HuntCriteria,
+  overrides: Record<string, string | undefined>,
+): { criteria: HuntCriteria; applied: string[] } {
+  const criteria: HuntCriteria = { ...base };
+  const applied: string[] = [];
+
+  for (const [key, bounds] of Object.entries(ADJUSTABLE)) {
+    const raw = overrides[key];
+    if (raw === undefined || raw === '') continue;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) continue;
+    const clamped = Math.min(Math.max(parsed, bounds.min), bounds.max);
+    (criteria as unknown as Record<string, number>)[key] = clamped;
+    applied.push(`${key}=${clamped}`);
+  }
+
+  for (const key of ADJUSTABLE_FLAGS) {
+    const raw = overrides[key];
+    if (raw === undefined || raw === '') continue;
+    const value = raw === 'true';
+    (criteria as unknown as Record<string, boolean>)[key] = value;
+    applied.push(`${key}=${value}`);
+  }
+
+  // Turning off free-only does not grant a budget: paid mints still need
+  // HUNT_MAX_PRICE_ETH set on the server, which a browser cannot touch.
+  return { criteria, applied };
+}
+
 export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds)) return 'unknown';
   if (seconds < 60) return `${Math.round(seconds)}s`;

@@ -511,7 +511,10 @@ export function loadHuntConfig(env: NodeJS.ProcessEnv = process.env): {
     windowSec: optNumber('HUNT_WINDOW_SEC', 35),
     inspectTop: optNumber('HUNT_INSPECT_TOP', 6),
     maxMintsPerCycle: optNumber('HUNT_MAX_MINTS_PER_CYCLE', 2),
-    dryRun: optBool('HUNT_DRY_RUN', true),
+    // Live by default, so the bot actually mints once armed. Set
+    // HUNT_DRY_RUN=true to force practice mode server-side; the browser then
+    // cannot turn it live, which is the safe way to hand someone a deployment.
+    dryRun: optBool('HUNT_DRY_RUN', false),
     criteria: {
       minMintsPerMinute: optNumber('HUNT_MIN_MINTS_PER_MIN', 30),
       minUniqueMinters: optNumber('HUNT_MIN_UNIQUE_MINTERS', 8),
