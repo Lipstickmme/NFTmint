@@ -2,7 +2,7 @@ import { keccak256, type Address, type Hex } from 'viem';
 import { buildCalldata } from './calldata.js';
 import { encodeRpcBody } from './rpc.js';
 import type { NonceManager, Wallet } from './wallet.js';
-import type { BotConfig } from './config.js';
+import type { BotConfig, GasConfig, MintCallConfig } from './config.js';
 
 /**
  * Pre-signing: the single most important optimization for a FCFS chain.
@@ -81,11 +81,25 @@ export async function presignAll(params: PresignParams): Promise<PreparedTx[]> {
   return prepared;
 }
 
+/**
+ * The slice of configuration signing actually needs.
+ *
+ * Narrower than BotConfig on purpose: auto-hunt chooses its contract per
+ * candidate and has no mint config of its own, so demanding the whole thing
+ * forced it to fabricate placeholder values. `BotConfig` still satisfies this
+ * structurally, so every existing caller is unaffected.
+ */
+export interface SigningConfig {
+  chainId: number;
+  gas: Pick<GasConfig, 'maxFeePerGas' | 'maxPriorityFeePerGas'>;
+  mint: MintCallConfig;
+}
+
 interface SignOneParams {
   wallet: Wallet;
   nonce: number;
   gasLimit: bigint;
-  config: BotConfig;
+  config: SigningConfig;
 }
 
 export async function signOne(params: SignOneParams): Promise<PreparedTx> {

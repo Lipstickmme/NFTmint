@@ -479,6 +479,58 @@ export function loadAutopilotConfig(env: NodeJS.ProcessEnv = process.env): {
 }
 
 /**
+ * Everything auto-hunt needs to sign and broadcast — and nothing more.
+ *
+ * Hunting discovers its target from the feed and derives the call per
+ * candidate, so it must NOT require CONTRACT_ADDRESS or MINT_FUNCTION. It
+ * previously borrowed `loadConfig` and fed it placeholder values, which broke
+ * the moment those variables existed but were blank: the placeholder used `??`,
+ * which only substitutes for null/undefined, so an empty string sailed through
+ * and was then rejected as missing.
+ */
+export interface HuntRuntime {
+  network: NetworkName;
+  chainId: number;
+  rpcUrls: string[];
+  submitOnlyUrls: string[];
+  privateKeys: Hex[];
+  gas: GasConfig;
+}
+
+export function loadHuntRuntime(env: NodeJS.ProcessEnv = process.env): HuntRuntime {
+  const { opt, req, optNumber } = createEnvReader(env);
+  const network = parseNetwork(opt('NETWORK') ?? 'testnet');
+
+  const rpcUrls = (opt('RPC_URLS') ?? defaultRpcFor(network))
+    .split(',')
+    .map((u) => u.trim())
+    .filter((u) => /^https?:\/\//.test(u));
+  if (rpcUrls.length === 0) {
+    throw new ConfigError('RPC_URLS contains no usable http(s) endpoint');
+  }
+
+  return {
+    network,
+    chainId: network === 'mainnet' ? 4663 : 46630,
+    rpcUrls,
+    submitOnlyUrls: (env.SEQUENCER_URLS !== undefined
+      ? env.SEQUENCER_URLS
+      : sequencerRpcFor(network)
+    )
+      .split(',')
+      .map((u) => u.trim())
+      .filter((u) => /^https?:\/\//.test(u)),
+    privateKeys: parsePrivateKeys(req('PRIVATE_KEYS')),
+    gas: {
+      gasLimit: undefined,
+      gasLimitMultiplier: optNumber('GAS_LIMIT_MULTIPLIER', 1.3),
+      maxFeePerGas: gweiToWei(opt('MAX_FEE_GWEI') ?? '0.5'),
+      maxPriorityFeePerGas: gweiToWei(opt('PRIORITY_FEE_GWEI') ?? '0'),
+    },
+  };
+}
+
+/**
  * Hunt configuration — the criteria that decide what gets bought automatically.
  *
  * Defaults are tuned for "a real drop that is minting out fast" rather than

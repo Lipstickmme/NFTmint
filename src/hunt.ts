@@ -1,5 +1,9 @@
 import { formatEther, type Address, type Hex } from 'viem';
-import { loadConfig, loadTrackerConfig, type BotConfig } from './config.js';
+import {
+  loadHuntRuntime,
+  loadTrackerConfig,
+  type HuntRuntime,
+} from './config.js';
 import { RpcClient } from './rpc.js';
 import { FeedConsumer } from './feed.js';
 import { MintTracker, type TrackedCollection } from './tracker.js';
@@ -159,12 +163,10 @@ export async function runHuntCycle(
     .filter((c) => couldQualify(c, hunt.criteria))
     .slice(0, hunt.inspectTop);
 
-  const config = loadConfig({
-    ...base,
-    // loadConfig demands a contract; the real one is chosen per candidate.
-    CONTRACT_ADDRESS: base.CONTRACT_ADDRESS ?? '0x0000000000000000000000000000000000000001',
-    MINT_FUNCTION: base.MINT_FUNCTION ?? 'mint(uint256)',
-  });
+  // Only what hunting actually needs. It finds its target on the feed, so
+  // requiring CONTRACT_ADDRESS or MINT_FUNCTION here would be wrong -- and was
+  // the bug that made every round fail once those variables existed but blank.
+  const config = loadHuntRuntime(base);
   const clients = [
     ...config.rpcUrls.map((u) => new RpcClient(u, { maxSockets: 16 })),
   ];
@@ -249,7 +251,7 @@ export async function runHuntCycle(
 interface MintCandidateParams {
   collection: TrackedCollection;
   info?: ContractInfo;
-  config: BotConfig;
+  config: HuntRuntime;
   wallets: Wallet[];
   primary: RpcClient;
   submitClients: RpcClient[];
@@ -351,10 +353,13 @@ async function mintCandidate(
         wallet,
         nonce: nonces.allocate(wallet.address),
         gasLimit,
+        // signOne reads only these three; building them explicitly keeps the
+        // hunt runtime from having to masquerade as a full mint config.
         config: {
-          ...config,
+          chainId: config.chainId,
+          gas: config.gas,
           mint: { contract, rawCalldata: call.buildFor(wallet.address), args: [], value },
-        } as BotConfig,
+        },
       }),
     );
   }
