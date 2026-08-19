@@ -35,6 +35,14 @@ export const DEFAULT_LIMITS = {
   hunt: { capacity: 6, refillPerSec: 6 / 60 },
   mint: { capacity: 10, refillPerSec: 10 / 60 },
   read: { capacity: 60, refillPerSec: 1 },
+  /**
+   * Sign-up is the one route anyone can reach without a credential, and each
+   * call generates ten keypairs and writes a row. Tight on purpose: nobody
+   * legitimately needs a fourth account in an hour.
+   */
+  signup: { capacity: 3, refillPerSec: 3 / 3600 },
+  /** Reading your own account is cheap, but it opens sealed keys. */
+  account: { capacity: 30, refillPerSec: 0.5 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type LimitName = keyof typeof DEFAULT_LIMITS;

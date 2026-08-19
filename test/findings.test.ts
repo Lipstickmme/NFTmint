@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { isNearMiss, mergeFinding, toFinding, type Finding } from '../src/findings.js';
+import { isClose, mergeFinding, toFinding, type Finding } from '../src/findings.js';
 import { getStore, recordFinding, resetStore } from '../src/store.js';
 import { resetRateLimits } from '../src/ratelimit.js';
 import type { Candidate } from '../src/hunt.js';
@@ -28,10 +28,12 @@ function candidate(over: {
   contract?: string;
   passed?: boolean;
   failed?: string[];
+  score?: number;
   minted?: Candidate['minted'];
 } = {}): Candidate {
   const contract = over.contract ?? '0x00000000000000000000000000000000000000aa';
   const failed = over.failed ?? [];
+  const passed = over.passed ?? true;
   return {
     collection: {
       contract,
@@ -50,36 +52,46 @@ function candidate(over: {
     } as unknown as Candidate['info'],
     evaluation: {
       contract,
-      passed: over.passed ?? true,
+      passed,
       projectedSelloutSec: 466,
-      reason: over.passed === false ? 'skipped' : 'qualified',
+      score: over.score ?? (passed ? 100 : 85),
+      reason: passed ? 'qualified' : 'short',
       checks: [
-        { name: 'mint rate', passed: true, actual: '90/min', required: '>= 30/min', why: '' },
-        ...failed.map((name) => ({
+        { name: 'mint rate', passed: true, actual: '90/min', required: '>= 30/min', why: '', score: 1, weight: 2 },
+        ...failed.map((name, i) => ({
           name, passed: false, actual: 'no', required: 'yes', why: '',
+          // Descending, so the sort that puts the weakest rule first is visible.
+          score: 0.5 - i * 0.1, weight: 2,
         })),
-        { name: 'sale open', passed: false, skipped: true, actual: '—', required: '—', why: '' },
+        { name: 'supply left', passed: true, skipped: true, actual: '—', required: '—', why: '', score: 1, weight: 0 },
       ],
     } as unknown as Candidate['evaluation'],
     minted: over.minted,
   };
 }
 
-describe('near misses', () => {
-  it('is a near miss when one or two rules failed', () => {
-    expect(isNearMiss(1)).toBe(true);
-    expect(isNearMiss(2)).toBe(true);
+describe('close enough to keep', () => {
+  it('keeps anything at or above the cut', () => {
+    expect(isClose(70)).toBe(true);
+    expect(isClose(94)).toBe(true);
   });
 
-  it('is not a near miss when everything passed', () => {
-    // A passer is recorded on its own merit; calling it a near miss too would
-    // put it in both filters at once.
-    expect(isNearMiss(0)).toBe(false);
+  it('drops anything well short', () => {
+    // Counting failed rules could not tell these apart from a 94: all of them
+    // "failed one rule". The distance is the whole point.
+    expect(isClose(69)).toBe(false);
+    expect(isClose(12)).toBe(false);
   });
 
-  it('is not a near miss when it missed by a mile', () => {
-    expect(isNearMiss(3)).toBe(false);
-    expect(isNearMiss(9)).toBe(false);
+  it('does not call a passer close', () => {
+    // A passer is recorded on its own merit; listing it as close as well would
+    // put it in both tabs at once.
+    expect(isClose(100)).toBe(false);
+  });
+
+  it('honours a custom cut', () => {
+    expect(isClose(55, 50)).toBe(true);
+    expect(isClose(55, 60)).toBe(false);
   });
 });
 
@@ -285,9 +297,11 @@ describe('storage drivers', () => {
     const file = path.join(dir, 'findings.json');
     await getStore({ FINDINGS_FILE: file } as NodeJS.ProcessEnv).put(toFinding(candidate()));
 
-    const rows = JSON.parse(await readFile(file, 'utf8')) as Record<string, Finding>;
+    // Rows are stored as JSON strings inside the namespace map, so the file is
+    // one level of encoding deeper than the record itself.
+    const rows = JSON.parse(await readFile(file, 'utf8')) as Record<string, string>;
     expect(Object.keys(rows)).toHaveLength(1);
-    expect(Object.values(rows)[0].name).toBe('Stub Cats');
+    expect((JSON.parse(Object.values(rows)[0]) as Finding).name).toBe('Stub Cats');
   });
 });
 
@@ -521,19 +535,42 @@ describe('/api/findings', () => {
     expect(res.body.findings[0].name).toBe('Stub Cats');
   });
 
-  it('filters to passers and to near misses', async () => {
+  it('filters to passers and to the close ones', async () => {
     await recordFinding(toFinding(candidate({ contract: '0x' + 'a'.repeat(40) })));
     await recordFinding(
-      toFinding(candidate({ contract: '0x' + 'b'.repeat(40), passed: false, failed: ['sale open'] })),
+      toFinding(candidate({
+        contract: '0x' + 'b'.repeat(40), passed: false, failed: ['sale open'], score: 88,
+      })),
     );
 
     const passed = await call({ headers: auth, url: '/api/findings?filter=passed' });
     expect(passed.body.findings).toHaveLength(1);
     expect(passed.body.findings[0].passed).toBe(true);
 
-    const near = await call({ headers: auth, url: '/api/findings?filter=near' });
-    expect(near.body.findings).toHaveLength(1);
-    expect(near.body.findings[0].failedChecks).toEqual(['sale open']);
+    const close = await call({ headers: auth, url: '/api/findings?filter=close' });
+    expect(close.body.findings).toHaveLength(1);
+    expect(close.body.findings[0].failedChecks).toEqual(['sale open']);
+    expect(close.body.findings[0].score).toBe(88);
+  });
+
+  it('leaves a low scorer out of the close list', async () => {
+    await recordFinding(
+      toFinding(candidate({ passed: false, failed: ['unique minters'], score: 30 })),
+    );
+    const close = await call({ headers: auth, url: '/api/findings?filter=close' });
+    expect(close.body.findings).toEqual([]);
+    expect(close.body.close).toBe(0);
+  });
+
+  it('takes a custom cut from the query', async () => {
+    await recordFinding(
+      toFinding(candidate({ passed: false, failed: ['unique minters'], score: 45 })),
+    );
+    expect((await call({ headers: auth, url: '/api/findings?filter=close' })).body.close).toBe(0);
+
+    const looser = await call({ headers: auth, url: '/api/findings?filter=close&minScore=40' });
+    expect(looser.body.minScore).toBe(40);
+    expect(looser.body.findings).toHaveLength(1);
   });
 
   it('clamps a nonsense limit instead of failing', async () => {

@@ -45,7 +45,17 @@
       "includeFiles": "src/**"
     },
     "api/findings.ts": {
-      "maxDuration": 15,
+      "maxDuration": 20,
+      "memory": 256,
+      "includeFiles": "src/**"
+    },
+    "api/account.ts": {
+      "maxDuration": 20,
+      "memory": 256,
+      "includeFiles": "src/**"
+    },
+    "api/origin.ts": {
+      "maxDuration": 25,
       "memory": 256,
       "includeFiles": "src/**"
     }

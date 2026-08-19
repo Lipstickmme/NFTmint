@@ -207,7 +207,7 @@ export function loadWalletKeys(env: NodeJS.ProcessEnv = process.env): {
   };
 }
 
-function parsePrivateKeys(raw: string): Hex[] {
+function parsePrivateKeys(raw: string, allowEmpty = false): Hex[] {
   const keys = raw
     .split(',')
     .map((k) => k.trim())
@@ -228,7 +228,7 @@ function parsePrivateKeys(raw: string): Hex[] {
     }
     seen.add(lower);
   }
-  if (keys.length === 0) throw new ConfigError('PRIVATE_KEYS is empty');
+  if (keys.length === 0 && !allowEmpty) throw new ConfigError('PRIVATE_KEYS is empty');
   return keys as Hex[];
 }
 
@@ -497,7 +497,15 @@ export interface HuntRuntime {
   gas: GasConfig;
 }
 
-export function loadHuntRuntime(env: NodeJS.ProcessEnv = process.env): HuntRuntime {
+/**
+ * @param requireKeys set false when the caller brings its own wallets — an
+ * account-driven hunt supplies generated keys, so demanding PRIVATE_KEYS from
+ * the environment would break the one deployment shape that never needs it.
+ */
+export function loadHuntRuntime(
+  env: NodeJS.ProcessEnv = process.env,
+  requireKeys = true,
+): HuntRuntime {
   const { opt, req, optNumber } = createEnvReader(env);
   const network = parseNetwork(opt('NETWORK') ?? 'testnet');
 
@@ -520,7 +528,9 @@ export function loadHuntRuntime(env: NodeJS.ProcessEnv = process.env): HuntRunti
       .split(',')
       .map((u) => u.trim())
       .filter((u) => /^https?:\/\//.test(u)),
-    privateKeys: parsePrivateKeys(req('PRIVATE_KEYS')),
+    privateKeys: requireKeys
+      ? parsePrivateKeys(req('PRIVATE_KEYS'))
+      : parsePrivateKeys(opt('PRIVATE_KEYS') ?? '', true),
     gas: {
       gasLimit: undefined,
       gasLimitMultiplier: optNumber('GAS_LIMIT_MULTIPLIER', 1.3),

@@ -269,7 +269,11 @@ RPC_URLS=https://your-dedicated-endpoint
 | `POST /api/mint` | Pre-sign and broadcast now |
 | `GET /api/scan` | Sample the feed, rank by mint velocity |
 | `GET /api/hunt` | One full cycle: watch → judge → mint what qualifies |
-| `GET /api/findings` | Everything the hunter kept — passers and near misses. `DELETE` clears it |
+| `GET /api/findings` | Everything the hunter kept — passers and the ones that came close. `DELETE` clears it |
+| `POST /api/account` | Sign up: ten generated wallets and an access key |
+| `GET /api/account` | Your addresses and balances. `?reveal=1` returns the private keys |
+| `PATCH /api/account` | Set your own RPC, or pause auto-mint |
+| `GET /api/origin` | Which endpoint your mints leave through, and how far away it is |
 
 ### You don't need to know the ABI
 
@@ -327,6 +331,73 @@ still need a price ceiling set in the environment.
 server-side so the browser cannot turn it live — useful when handing someone a
 deployment — set `HUNT_DRY_RUN=true`.
 
+### Accounts: ten wallets, generated for you
+
+Sign up and the server generates ten wallets, seals their keys, and mints from
+all of them at once. Per-wallet mint limits are the norm, so ten funded wallets
+is ten tokens where one wallet gets one.
+
+**Understand the trade before turning this on.** To mint while you are away, the
+server must hold keys that can spend. That makes the deployment *custodial*:
+whoever controls the host and `ACCOUNT_ENCRYPTION_KEY` can move anything those
+wallets hold. The design keeps the blast radius small rather than pretending it
+is zero —
+
+- keys are sealed with AES-256-GCM under a value that lives only in the
+  environment, so a database dump alone opens nothing;
+- the account's access key is stored as a hash, so the same dump cannot be
+  replayed against the API;
+- keys are never in the response the page fetches on load — revealing them is a
+  separate, explicit request;
+- an account's own RPC is checked against private and loopback ranges before the
+  server will call it.
+
+**Fund them with gas money and nothing else.** They are burners.
+
+The access key is shown once at sign-up and cannot be recovered or reset —
+losing it loses the account.
+
+### Match score: how close is close?
+
+Every collection gets a score out of 100 rather than a pass/fail, because
+counting failed rules throws away the thing that matters. "Needed 30 mints a
+minute and saw 29" and "saw 2" both fail one rule; only one of them means your
+threshold is a shade too tight.
+
+Each rule gets partial credit for how near the actual value came, weighted by
+how much it tells you — unique minters and sellout runway carry the most. A
+collection that clears everything is 100 by construction, and the second list
+shows everything at **70 or better that still did not qualify**, weakest rule
+named first so the dial to loosen leads.
+
+Rules with no threshold behind them — sold out, sale closed, already held —
+score **zero** instead of partial credit. No adjustment makes an owned
+collection buyable, so it is not "close" to anything and never clutters the
+list.
+
+### Where your mints leave from
+
+Ordering on this chain is first-come-first-served with no priority auction, so
+the only lever is how long your bytes take to reach the sequencer. The Route
+screen names the provider and region behind every endpoint in play, measures
+each one, and says which your mints will actually leave through.
+
+Being exact about the limit: **it cannot show where other minters are.** A
+transaction on the feed carries a signature and calldata and nothing about the
+machine that produced it, so a map of rival minters would be invented. What is
+measurable is your own route, and on FCFS ordering that is the half that decides
+races anyway.
+
+### What the ones that got away were worth
+
+A skip is a decision, and without a price attached there is no way to tell a
+good one from a costly one. Set `MARKET_API_URL` to a marketplace endpoint and
+past free mints carry their floor, plus what ten wallets would have held.
+
+With no source configured every floor reads as unknown. That is deliberate: a
+hardcoded marketplace URL that has not been verified against this chain would
+produce numbers that get acted on.
+
 ### The history: what it found, and what it nearly bought
 
 A hunt report only describes the round that produced it. Rounds land roughly
@@ -352,14 +423,14 @@ Storage is picked from the environment, with no code change between them:
 | When | Where | Survives |
 | --- | --- | --- |
 | Vercel KV / Upstash attached | Redis over REST | restarts, redeploys, every instance |
-| `FINDINGS_FILE` set | a JSON file | restarts on that host |
+| `DATA_DIR` set | a directory of JSON files | restarts on that host |
 | neither | process memory | nothing — and the panel says so |
 
 On Vercel the memory fallback means the list appears to reset at random, since
 instances are recycled and each has its own copy. Attaching a KV database from
 the Storage tab injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`, and the bot
 switches over on the next deploy. See
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#keeping-a-history).
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#storage).
 
 Every write is fail-soft: a round that cannot reach the store logs a warning
 and carries on minting. Losing a log line is cheaper than losing the mint.
@@ -475,8 +546,14 @@ src/
   tracker.ts     Per-contract velocity, unique minters, hot detection
   autopilot.ts   Mass-mint orchestration with budget and safety rails
   hunt.ts        One cycle: watch the feed, judge, buy what qualifies
+  criteria.ts    The rules, and the 0-100 score for how close a collection came
   findings.ts    The record of a found collection, and how repeats fold together
-  store.ts       Where that record lives: Vercel KV, a file, or memory
+  kv.ts          One namespaced store: Vercel KV, a directory of files, or memory
+  store.ts       The findings history on top of it
+  accounts.ts    Wallet generation, sealing, and the RPC allowlist
+  accountstore.ts Where accounts live, and how they authenticate
+  origin.ts      Provider, region and latency for every endpoint in play
+  market.ts      Floor prices for the free mints that got away
   server.ts      Tracker HTTP API + self-contained dashboard
   service.ts     Service layer behind the web API (status/preflight/mint/scan)
   http.ts        Auth, JSON safety, and the shared route wrapper
@@ -486,7 +563,7 @@ src/
   cli.ts         Command-line entry point
 api/             Vercel serverless routes
 public/index.html  The web UI
-test/            329 tests, incl. end-to-end runs against a mock node
+test/            405 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```

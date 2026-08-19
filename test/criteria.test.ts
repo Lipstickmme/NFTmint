@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Address } from 'viem';
-import { evaluate, projectSelloutSec, formatDuration, DEFAULT_CRITERIA, type HuntCriteria } from '../src/criteria.js';
+import { evaluate, projectSelloutSec, formatDuration, scoreOf, CLOSE_SCORE, DEFAULT_CRITERIA, type HuntCriteria } from '../src/criteria.js';
 import { activityStatus, type TrackedCollection } from '../src/tracker.js';
 import type { ContractInfo } from '../src/inspect.js';
 
@@ -212,9 +212,39 @@ describe('evaluate', () => {
     }
   });
 
-  it('names the failures in its summary', () => {
+  it('leads its summary with the score and the weakest rule', () => {
     const result = evaluate(hot({ uniqueMinters: 1, attemptsPerMinute: 1 }), criteria, info());
-    expect(result.reason).toMatch(/skipped:/);
+    expect(result.reason).toMatch(/\/100/);
     expect(result.reason).toMatch(/unique minters/);
+  });
+
+  it('scores a full pass at 100', () => {
+    const result = evaluate(hot(), criteria, info());
+    expect(result.passed).toBe(true);
+    expect(result.score).toBe(100);
+  });
+
+  it('scores a collection that only just misses far above one that misses badly', () => {
+    // The whole reason for a score: counting failed rules calls both of these
+    // "failed one rule", which is the distinction that actually matters.
+    const near = evaluate(
+      hot({ uniqueMinters: criteria.minUniqueMinters - 1 }), criteria, info(),
+    );
+    const far = evaluate(hot({ uniqueMinters: 1 }), criteria, info());
+
+    expect(near.passed).toBe(false);
+    expect(near.score).toBeGreaterThan(far.score);
+    expect(near.score).toBeGreaterThanOrEqual(90);
+  });
+
+  it('scores an un-tunable blocker below the close cut', () => {
+    // No threshold makes an already-held or closed-sale collection buyable, so
+    // it must not sit in the list of things one dial away from qualifying.
+    const blocked = evaluate(hot(), criteria, {
+      ...info(),
+      saleOpen: { value: false, source: 'saleIsActive()' },
+      ownedByWallet: '2',
+    });
+    expect(blocked.score).toBeLessThan(CLOSE_SCORE);
   });
 });

@@ -7,9 +7,11 @@ import {
   type ApiResponse,
 } from '../src/http.js';
 import { loadHuntConfig } from '../src/config.js';
-import { runHuntCycle } from '../src/hunt.js';
+import { runHuntCycle, type HuntIdentity } from '../src/hunt.js';
 import { mergeCriteria } from '../src/criteria.js';
 import { withSingleFlight } from '../src/ratelimit.js';
+import { authenticateAccount } from '../src/accountstore.js';
+import { privateKeysOf } from '../src/accounts.js';
 
 /**
  * /api/hunt — one full cycle: sample the feed, judge every candidate, and mint
@@ -19,8 +21,10 @@ import { withSingleFlight } from '../src/ratelimit.js';
  * process staying alive between runs. Each cycle stands alone, and re-buying is
  * prevented by an on-chain balance check rather than stored state.
  *
- * Two ways in:
- *   - `Authorization: Bearer <API_TOKEN>` — how the UI calls it.
+ * Three ways in:
+ *   - `x-account-id` + `x-account-token` — a signed-up user hunting with their
+ *     own generated wallets, through their own RPC, into their own history.
+ *   - `Authorization: Bearer <API_TOKEN>` — the operator, using PRIVATE_KEYS.
  *   - Vercel Cron, which cannot send custom headers. Cron requests carry
  *     `x-vercel-cron`, and are accepted when CRON_SECRET matches the
  *     `Authorization` header Vercel sends, or when no CRON_SECRET is set and
@@ -30,6 +34,47 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
   const bearer = Array.isArray(req.headers.authorization)
     ? req.headers.authorization[0]
     : req.headers.authorization;
+
+  // An account hunts with its own wallets, so it needs no operator token — its
+  // credentials only ever unlock its own keys and its own history.
+  const accountId = header(req, 'x-account-id');
+  const accountToken = header(req, 'x-account-token');
+  if (accountId && accountToken) {
+    let identity: HuntIdentity;
+    try {
+      const account = await authenticateAccount(accountId, accountToken);
+      if (!account.autoMint) {
+        res.setHeader('content-type', 'application/json');
+        res.status(200).send(
+          jsonSafe({
+            paused: true,
+            reason: 'Auto-mint is off for this account. Turn it on to start hunting.',
+            candidates: [],
+            qualified: 0,
+            mintedCollections: 0,
+            observed: { feedTxSeen: 0, mintsSeen: 0, contractsTracked: 0 },
+            feedConnected: false,
+            dryRun: true,
+            note: 'Auto-mint is paused.',
+          }),
+        );
+        return;
+      }
+      identity = {
+        privateKeys: privateKeysOf(account).map((k) => k.privateKey),
+        rpcUrls: account.rpcUrl ? [account.rpcUrl] : [],
+        namespace: account.id,
+      };
+    } catch (err) {
+      res.setHeader('content-type', 'application/json');
+      res.status(401).send(
+        jsonSafe({ error: err instanceof Error ? err.message : String(err) }),
+      );
+      return;
+    }
+    await runAndRespond(req, res, identity);
+    return;
+  }
 
   // `x-vercel-cron` is a hint that a request came from the scheduler, NOT proof
   // of it: any client can set that header. Treating its presence as authority
@@ -69,7 +114,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
   await runAndRespond(req, res);
 }
 
-async function runAndRespond(req: ApiRequest, res: ApiResponse): Promise<void> {
+function header(req: ApiRequest, name: string): string | undefined {
+  const value = req.headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+async function runAndRespond(
+  req: ApiRequest,
+  res: ApiResponse,
+  identity?: HuntIdentity,
+): Promise<void> {
   await handleApi(
     req,
     res,
@@ -106,7 +160,7 @@ async function runAndRespond(req: ApiRequest, res: ApiResponse): Promise<void> {
           // HUNT_DRY_RUN=true, and then the browser cannot turn it live.
           dryRun: cfg.dryRun ? true : dryRun,
           criteria,
-        }),
+        }, process.env, identity),
       );
 
       if (!outcome.ran) {

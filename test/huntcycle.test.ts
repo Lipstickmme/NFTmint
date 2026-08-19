@@ -242,6 +242,7 @@ describe('a hunt cycle records what it found', () => {
     expect(kept[0].remaining).toBe('200');
     // Dry run signs everything and sends nothing; the record has to say so.
     expect(kept[0].outcome).toMatch(/practice mode/);
+    expect(kept[0].score).toBe(100);
   }, 20_000);
 
   it('saves a completed buy with its transactions', async () => {
@@ -265,6 +266,9 @@ describe('a hunt cycle records what it found', () => {
     expect(kept).toHaveLength(1);
     expect(kept[0].passed).toBe(false);
     expect(kept[0].failedChecks).toEqual(['supply left']);
+    // One tunable rule short, so it lands high enough to show in the close list.
+    expect(kept[0].score).toBeGreaterThanOrEqual(70);
+    expect(kept[0].score).toBeLessThan(100);
   }, 20_000);
 
   it('refuses to re-buy a collection the wallet already holds', async () => {
@@ -278,13 +282,19 @@ describe('a hunt cycle records what it found', () => {
     expect(report.qualified).toBe(0);
     expect(node.broadcast).toEqual([]);
 
-    const kept = await getStore(env).list();
-    expect(kept[0].failedChecks).toEqual(['not already held']);
+    const failed = report.candidates[0].evaluation.checks
+      .filter((c) => !c.passed && !c.skipped)
+      .map((c) => c.name);
+    expect(failed).toContain('not already held');
+
+    // Unbuyable, not nearly buyable — so it scores zero and is not kept at all.
+    expect(report.candidates[0].evaluation.score).toBe(0);
+    expect(await getStore(env).list()).toEqual([]);
   }, 20_000);
 
-  it('does not save a collection that missed by a mile', async () => {
-    // Three failures is not a near miss, it is a collection nobody would tune
-    // their way into. Keeping those would bury the list.
+  it('does not save a collection nothing could rescue', async () => {
+    // Sold out, sale closed, already held: no threshold makes any of these
+    // buyable, so they score zero and stay out of the close list entirely.
     await setup({ totalSupply: 990n, saleOpen: false, ownedByBot: 3n });
     const report = await runHuntCycle(huntConfig(), env);
 

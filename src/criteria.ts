@@ -86,6 +86,25 @@ export interface Check {
   why: string;
   /** True when the data needed was unavailable, so the check was not applied. */
   skipped?: boolean;
+  /**
+   * How close this check came, from 0 to 1. Exactly 1 when it passed.
+   *
+   * Pass/fail alone throws away the difference between "needed 30 mints a
+   * minute and saw 29" and "saw 2". Both are skips, but only one is worth
+   * looking at, and only one says the threshold might be a shade too tight.
+   */
+  score: number;
+  /** Relative importance when the per-check scores are rolled into one. */
+  weight: number;
+  /**
+   * A rule with no threshold behind it: sold out, sale closed, already held.
+   *
+   * These are not "nearly passed" at any setting — there is no dial that makes
+   * an owned collection buyable again. Failing one takes the score to zero, so
+   * an unbuyable collection can never sit in the list of things one adjustment
+   * away from qualifying.
+   */
+  blocking?: boolean;
 }
 
 export interface Evaluation {
@@ -94,8 +113,73 @@ export interface Evaluation {
   checks: Check[];
   /** Seconds until sellout at the observed rate, when supply is readable. */
   projectedSelloutSec?: number;
+  /**
+   * Weighted match score out of 100. A collection that passed everything is
+   * 100 by construction; anything lower is the distance left to cover.
+   */
+  score: number;
   /** One-line summary suitable for a log line or a table cell. */
   reason: string;
+}
+
+/**
+ * Good enough to be worth showing, even though it did not qualify.
+ *
+ * The cut is deliberately generous. The list it feeds is for tuning, and the
+ * question it answers is "was anything nearly good enough, and which dial was
+ * in the way" — so it should err toward showing one collection too many.
+ */
+export const CLOSE_SCORE = 70;
+
+export function isClose(score: number, min = CLOSE_SCORE): boolean {
+  return score >= min;
+}
+
+/**
+ * Partial credit toward a floor: half the required rate scores 0.5.
+ */
+function atLeast(actual: number, required: number): number {
+  if (required <= 0) return 1;
+  return Math.max(0, Math.min(1, actual / required));
+}
+
+/**
+ * Partial credit against a ceiling: twice the allowed age scores 0.5.
+ */
+function atMost(actual: number, required: number): number {
+  if (actual <= required) return 1;
+  if (actual <= 0) return 1;
+  return Math.max(0, Math.min(1, required / Math.max(actual, 1e-9)));
+}
+
+/**
+ * Partial credit for a percentage under a ceiling, measured as the headroom
+ * left. At 100% minted the score is 0 however loose the ceiling was, which is
+ * right: there is nothing left regardless of what you asked for.
+ */
+function headroom(actualPct: number, requiredPct: number): number {
+  if (actualPct <= requiredPct) return 1;
+  const span = 100 - requiredPct;
+  if (span <= 0) return 0;
+  return Math.max(0, Math.min(1, (100 - actualPct) / span));
+}
+
+/**
+ * Roll the per-check scores into one number out of 100.
+ *
+ * Skipped checks are left out entirely rather than counted as passes: a
+ * contract with an unreadable supply should not score higher than one whose
+ * supply was read and was fine.
+ */
+export function scoreOf(checks: Check[]): number {
+  const applied = checks.filter((c) => !c.skipped);
+  if (applied.length === 0) return 0;
+  // Nothing you can adjust rescues this, so it is not close to anything.
+  if (applied.some((c) => c.blocking && !c.passed)) return 0;
+  const total = applied.reduce((sum, c) => sum + c.weight, 0);
+  if (total <= 0) return 0;
+  const earned = applied.reduce((sum, c) => sum + c.score * c.weight, 0);
+  return Math.round((earned / total) * 100);
 }
 
 /**
@@ -127,6 +211,8 @@ export function evaluate(
     actual: `${collection.attemptsPerMinute}/min`,
     required: `>= ${criteria.minMintsPerMinute}/min`,
     why: 'A collection minting out fast produces a high sustained rate.',
+    score: atLeast(collection.attemptsPerMinute, criteria.minMintsPerMinute),
+    weight: 2,
   });
 
   checks.push({
@@ -137,6 +223,9 @@ export function evaluate(
     why:
       'Many distinct wallets means real demand. A high count from few addresses ' +
       'is one bot spamming something nobody else wants.',
+    // The highest-value dial, so it carries the most weight in the score.
+    score: atLeast(collection.uniqueMinters, criteria.minUniqueMinters),
+    weight: 3,
   });
 
   checks.push({
@@ -145,6 +234,8 @@ export function evaluate(
     actual: String(collection.attemptsInWindow),
     required: `>= ${criteria.minAttemptsInWindow}`,
     why: 'Enough activity inside the recent window to be a real rush.',
+    score: atLeast(collection.attemptsInWindow, criteria.minAttemptsInWindow),
+    weight: 1,
   });
 
   checks.push({
@@ -153,6 +244,8 @@ export function evaluate(
     actual: `${Math.round(collection.ageSec)}s old`,
     required: `<= ${criteria.maxAgeSec}s`,
     why: 'Joining late means the supply is mostly gone and you race the tail.',
+    score: atMost(collection.ageSec, criteria.maxAgeSec),
+    weight: 1,
   });
 
   if (criteria.requireLive) {
@@ -162,6 +255,9 @@ export function evaluate(
       actual: `${collection.status} (last ${Math.round(collection.lastSeenSecAgo)}s ago)`,
       required: 'live',
       why: 'A gap in activity means it already finished — the counts are history.',
+      // 'slowing' is genuinely closer than 'ended' and scores accordingly.
+      score: collection.status === 'live' ? 1 : collection.status === 'slowing' ? 0.5 : 0,
+      weight: 2,
     });
   }
 
@@ -174,6 +270,8 @@ export function evaluate(
         : `${formatEther(BigInt(collection.observedValueWei))} ETH`,
       required: 'free',
       why: 'Free-only caps your downside at gas.',
+      score: collection.isFree && BigInt(collection.observedValueWei) === 0n ? 1 : 0,
+      weight: 2,
     });
   } else {
     const observed = BigInt(collection.observedValueWei);
@@ -183,6 +281,8 @@ export function evaluate(
       actual: `${formatEther(observed)} ETH`,
       required: `<= ${formatEther(criteria.maxPriceWei)} ETH`,
       why: 'Keeps a single mint inside your per-collection budget.',
+      score: atMost(Number(observed), Number(criteria.maxPriceWei)),
+      weight: 2,
     });
   }
 
@@ -197,6 +297,9 @@ export function evaluate(
       actual: 'sold out',
       required: 'supply remaining',
       why: 'Nothing left to mint.',
+      score: 0,
+      weight: 4,
+      blocking: true,
     });
   } else if (info?.progressPct !== undefined) {
     checks.push({
@@ -205,6 +308,8 @@ export function evaluate(
       actual: `${info.progressPct.toFixed(1)}% minted`,
       required: `<= ${criteria.maxSupplyProgressPct}%`,
       why: 'Past this point you will probably lose the race and pay gas for a revert.',
+      score: headroom(info.progressPct, criteria.maxSupplyProgressPct),
+      weight: 2,
     });
 
     if (info.remaining !== undefined) {
@@ -221,6 +326,8 @@ export function evaluate(
           why:
             'Remaining supply divided by the current rate. This is the real test ' +
             'of scarcity — a fast rate against unlimited supply is not selling out.',
+          score: atMost(projectedSelloutSec, criteria.maxSelloutSec),
+          weight: 3,
         });
       }
     }
@@ -232,6 +339,8 @@ export function evaluate(
       actual: 'not readable',
       required: `<= ${criteria.maxSupplyProgressPct}%`,
       why: 'This contract does not expose totalSupply/maxSupply, so this was skipped.',
+      score: 1,
+      weight: 0,
     });
   }
 
@@ -242,6 +351,9 @@ export function evaluate(
       actual: info.saleOpen.value ? 'open' : 'closed',
       required: 'open',
       why: `The contract's ${info.saleOpen.source} says whether minting is allowed.`,
+      score: info.saleOpen.value ? 1 : 0,
+      weight: 3,
+      blocking: true,
     });
   }
 
@@ -255,6 +367,9 @@ export function evaluate(
       why:
         'You already minted this one. Checking on-chain is what stops a repeating ' +
         'hunt from buying the same collection every cycle.',
+      score: owned === 0n ? 1 : 0,
+      weight: 4,
+      blocking: true,
     });
   }
 
@@ -266,12 +381,18 @@ export function evaluate(
     passed,
     checks,
     projectedSelloutSec,
+    score: scoreOf(checks),
     reason: passed
       ? `qualified: ${collection.attemptsPerMinute}/min from ${collection.uniqueMinters} wallets` +
         (projectedSelloutSec !== undefined
           ? `, ~${formatDuration(projectedSelloutSec)} to sell out`
           : '')
-      : `skipped: ${failed.map((c) => c.name).join(', ')}`,
+      : // Weakest first: with a score attached, the useful thing to lead with
+        // is the rule furthest from passing, since that is the one to loosen.
+        `${scoreOf(checks)}/100 — short on ${[...failed]
+          .sort((a, b) => a.score - b.score)
+          .map((c) => c.name)
+          .join(', ')}`,
   };
 }
 

@@ -99,9 +99,12 @@ redeploy to mint a different contract.
 **Optional, for a persistent tracker:** `TRACKER_UPSTREAM_URL`,
 `TRACKER_UPSTREAM_TOKEN`.
 
-**Optional, to keep the history:** `KV_REST_API_URL`, `KV_REST_API_TOKEN` —
-see [Keeping a history](#keeping-a-history) below. Without them the history
-works, but only in memory.
+**Required to let people sign up:** `ACCOUNT_ENCRYPTION_KEY` — see
+[Accounts](#accounts-generated-wallets) below.
+
+**Storage:** `KV_REST_API_URL`, `KV_REST_API_TOKEN` — see
+[Storage](#storage) below. Without them accounts and the history work, but only
+in memory, which loses generated wallets on restart.
 
 ### 4. Deploy
 
@@ -170,22 +173,51 @@ with a matching `CRON_SECRET`; without one, a cron-shaped request is treated
 like any other and must present `API_TOKEN`. Set `CRON_SECRET` in your
 environment and Vercel passes it automatically.
 
-## Keeping a history
+## Accounts: generated wallets
 
-The **History** panel under the hunt controls lists every collection that
-passed every rule, plus every one that missed by only a rule or two. Near
-misses are the useful half for tuning: each row names the rules it failed, so
-"loosen this one number and it would have bought" is visible rather than
-guessed at.
+Sign-up generates ten wallets per account and mints from all of them, which is
+how a one-per-wallet drop yields ten.
 
-This is a separate concern from the round panel above it. A hunt report only
-ever describes the round that produced it, so the round panel is replaced every
-~40 seconds and a page reload used to lose everything.
+Set one variable to enable it:
 
-**By default it works with no setup, but only in memory.** Serverless instances
-are recycled constantly and every instance has its own copy, so on Vercel a
-memory-backed history will appear to reset at random. The panel says which mode
-it is in, so you are never guessing.
+```bash
+openssl rand -hex 32   # → ACCOUNT_ENCRYPTION_KEY
+```
+
+Every generated private key is sealed with AES-256-GCM under that value, so a
+dump of the database alone cannot spend them.
+
+**Never rotate it.** Changing it makes every existing wallet unopenable and
+strands whatever they hold. There is no recovery path, by design — a fallback
+would be a second way in.
+
+**This deployment is custodial.** To mint while someone is away, the server must
+hold keys that can spend. Whoever controls the host and this key can move
+anything those wallets hold. Say so to anyone you hand the URL to, and keep the
+wallets to gas money.
+
+Sign-up needs no credential — it is the front door of the app — so it is rate
+limited to three per hour per caller, since each call generates ten keypairs and
+writes a row.
+
+An account's access key is shown once and stored only as a hash. It cannot be
+reset, and losing it loses the account.
+
+Accounts can set their own RPC endpoint. That URL is checked against loopback
+and private ranges before the server will call it, because otherwise it would be
+a way to aim the server at a cloud metadata service and read the reply back
+through an error message.
+
+---
+
+## Storage
+
+Accounts and the history of found mints share one store, chosen from the
+environment. **With nothing configured it works, but in memory only** — every
+serverless instance keeps its own copy and loses it on recycle. That is merely
+untidy for the history and actively dangerous for accounts, so `/api/health`
+reports it as a problem and the sign-up screen says so before anyone funds
+anything.
 
 To make it durable:
 
@@ -193,34 +225,89 @@ To make it durable:
 2. Connect it to this project.
 
 Vercel injects `KV_REST_API_URL` and `KV_REST_API_TOKEN` on the next deploy and
-the bot picks them up automatically — there is no code change and no migration.
-`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` are accepted too, if you
-provision Upstash directly.
+the app picks them up automatically — no code change, no migration.
+`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` work identically.
 
-Records are keyed by contract, so a collection seen across twenty rounds stays
-one row with a `seen in N rounds` count rather than twenty duplicates. The
-store holds the 200 most recent and expires after 30 days.
+Running on a persistent host instead? Set `DATA_DIR` to a directory and it
+writes a JSON file per namespace.
 
-Running on a persistent host instead of Vercel? Set `FINDINGS_FILE` to a path
-and it writes a JSON file. It is ignored when the KV variables are present.
+| Variable | Effect |
+| --- | --- |
+| `KV_REST_API_URL` + `KV_REST_API_TOKEN` | Redis over REST. Survives restarts and is shared across instances |
+| `DATA_DIR` | A directory of JSON files, for a persistent host |
+| neither | Process memory. Survives nothing |
+| `KV_KEY_PREFIX` | Only if several deployments share one database |
 
-The endpoint behind the panel:
+Accounts never expire. The findings history keeps the 200 most recent and ages
+out after 30 days.
+
+---
+
+## Floor prices for missed mints
+
+Optional, and off unless configured. Point `MARKET_API_URL` at a marketplace
+endpoint and past free mints carry their floor plus what ten wallets would have
+held:
 
 ```bash
-# every kept collection, newest first
-curl -H "Authorization: Bearer $API_TOKEN" https://your-app.vercel.app/api/findings
-
-# just the near misses, with the rules each one failed
-curl -H "Authorization: Bearer $API_TOKEN" \
-  "https://your-app.vercel.app/api/findings?filter=near"
-
-# start over
-curl -X DELETE -H "Authorization: Bearer $API_TOKEN" \
-  https://your-app.vercel.app/api/findings
+MARKET_API_URL=https://api.example.com/v1/collections/{contract}
+MARKET_API_TOKEN=…        # optional
+MARKET_CURRENCY=ETH       # label only
 ```
 
-It is authenticated like every other route: the history names contracts your
-wallets bought and what happened to each attempt.
+The `{contract}` placeholder is filled with the address; without it the address
+is appended. The response shapes the common marketplaces use are all understood
+(`floorPrice`, `floor_price`, `stats.floor_price`, `floorAsk.price.amount.native`).
+
+No marketplace is baked in on purpose. Shipping a URL that has not been verified
+against this chain would produce prices that get acted on — every floor reads as
+unknown until you configure a source you trust.
+
+---
+
+## Two lists: passed, and close
+
+The app keeps two lists, and the second one is the useful half.
+
+**Passed** — cleared every rule, with what became of the mint: confirmed
+transactions, or the exact reason nothing was sent.
+
+**Close** — scored 70 or better and still did not qualify, weakest rule named
+first. This is the tuning surface: "loosen *this* number and it would have
+minted" beats guessing at thresholds.
+
+The cut is a score, not a count of failures, because a count cannot tell 29
+mints a minute from 2 when the threshold is 30 — both "failed one rule". See
+[Match score](../README.md#match-score-how-close-is-close) for how the number is
+built.
+
+Records are keyed by contract, so a collection seen across twenty rounds stays
+one row with a `seen in N rounds` count. Each account's history is its own; what
+the chain was doing is shared, but which wallets tried and which transactions
+landed is not.
+
+The endpoint behind the lists:
+
+```bash
+# signed in as an account
+curl -H "x-account-id: $ID" -H "x-account-token: $KEY" \
+  https://your-app.vercel.app/api/findings
+
+# just the close ones, with the rules each fell short on
+curl -H "x-account-id: $ID" -H "x-account-token: $KEY" \
+  "https://your-app.vercel.app/api/findings?filter=close"
+
+# a looser cut
+curl -H "x-account-id: $ID" -H "x-account-token: $KEY" \
+  "https://your-app.vercel.app/api/findings?filter=close&minScore=50"
+
+# as the operator, over your own PRIVATE_KEYS instead
+curl -H "Authorization: Bearer $API_TOKEN" https://your-app.vercel.app/api/findings
+
+# start over
+curl -X DELETE -H "x-account-id: $ID" -H "x-account-token: $KEY" \
+  https://your-app.vercel.app/api/findings
+```
 
 ---
 

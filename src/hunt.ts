@@ -16,7 +16,7 @@ import { submitAll, waitForReceipts } from './submit.js';
 import { loadWallets, NonceManager, type Wallet } from './wallet.js';
 import { explorerTxUrl } from './chain.js';
 import { errorMessage } from './http.js';
-import { isNearMiss, toFinding } from './findings.js';
+import { isClose, toFinding } from './findings.js';
 import { recordFinding } from './store.js';
 import { log } from './logger.js';
 
@@ -117,9 +117,26 @@ function couldQualify(c: TrackedCollection, criteria: HuntCriteria): boolean {
   return true;
 }
 
+/**
+ * Whose wallets a cycle mints from, and through whose endpoint.
+ *
+ * Supplied when a signed-up account drives the hunt: its ten generated wallets
+ * replace PRIVATE_KEYS, and its own RPC — if it set one — is preferred over the
+ * deployment's. Absent, the cycle runs on the operator's own configuration,
+ * which is how the CLI and the cron path use it.
+ */
+export interface HuntIdentity {
+  privateKeys: Hex[];
+  /** The account's own endpoint, tried ahead of the deployment's. */
+  rpcUrls?: string[];
+  /** Keeps one account's history out of another's. */
+  namespace?: string;
+}
+
 export async function runHuntCycle(
   hunt: HuntConfig,
   base: NodeJS.ProcessEnv = process.env,
+  identity?: HuntIdentity,
 ): Promise<HuntReport> {
   const started = performance.now();
   const startedAt = new Date().toISOString();
@@ -168,7 +185,17 @@ export async function runHuntCycle(
   // Only what hunting actually needs. It finds its target on the feed, so
   // requiring CONTRACT_ADDRESS or MINT_FUNCTION here would be wrong -- and was
   // the bug that made every round fail once those variables existed but blank.
-  const config = loadHuntRuntime(base);
+  const base_ = loadHuntRuntime(base, identity === undefined);
+  // An account's own endpoint goes first: it is the one the user chose, and on
+  // a FCFS chain the endpoint you submit through is the whole race.
+  const config: HuntRuntime = identity
+    ? {
+        ...base_,
+        privateKeys: identity.privateKeys,
+        rpcUrls: [...(identity.rpcUrls ?? []), ...base_.rpcUrls],
+      }
+    : base_;
+
   const clients = [
     ...config.rpcUrls.map((u) => new RpcClient(u, { maxSockets: 16 })),
   ];
@@ -237,13 +264,14 @@ export async function runHuntCycle(
   // ── 6. Remember what was worth remembering ───────────────────────────────
   // Written after the loop so every record carries its final mint outcome
   // rather than the state it had mid-round. Only passers and near misses are
-  // kept: a collection that failed five rules is noise, but one that failed a
-  // single threshold is exactly what an operator wants to see when deciding
-  // whether the criteria are too tight.
+  // kept: a collection scoring 12 is noise, but one scoring 94 is exactly what
+  // an operator wants to see when deciding whether the criteria are too tight.
   const worthKeeping = candidates
     .map((c) => toFinding(c))
-    .filter((f) => f.passed || isNearMiss(f.failedChecks.length));
-  await Promise.all(worthKeeping.map((f) => recordFinding(f, base)));
+    .filter((f) => f.passed || isClose(f.score));
+  await Promise.all(
+    worthKeeping.map((f) => recordFinding(f, base, identity?.namespace)),
+  );
 
   return {
     startedAt,

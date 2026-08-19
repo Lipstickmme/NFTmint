@@ -27,6 +27,8 @@ const ROUTES: Record<string, () => Promise<{ default: Handler }>> = {
   '/api/inspect': () => import('../api/inspect.js') as Promise<{ default: Handler }>,
   '/api/collections': () => import('../api/collections.js') as Promise<{ default: Handler }>,
   '/api/findings': () => import('../api/findings.js') as Promise<{ default: Handler }>,
+  '/api/account': () => import('../api/account.js') as Promise<{ default: Handler }>,
+  '/api/origin': () => import('../api/origin.js') as Promise<{ default: Handler }>,
 };
 
 function adaptResponse(res: http.ServerResponse): ApiResponse {
@@ -68,7 +70,7 @@ export async function startDevServer(port: number): Promise<http.Server> {
             method: req.method,
             url: req.url,
             headers: req.headers as Record<string, string | string[] | undefined>,
-            body: req.method === 'POST' ? await readBody(req) : undefined,
+            body: req.method === 'POST' || req.method === 'PATCH' ? await readBody(req) : undefined,
           };
           await mod.default(apiReq, adaptResponse(res));
         } catch (err) {
