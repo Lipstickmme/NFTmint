@@ -31,6 +31,9 @@ let baseUrl: string;
 /** Serves the page plus just enough of the API for the UI to boot. */
 function startStubServer(): Promise<{ server: http.Server; url: string }> {
   const html = readFileSync(uiPath, 'utf8');
+  // Rounds after the first return nothing, reproducing the case where a quiet
+  // round used to wipe a finding off the screen.
+  let huntCalls = 0;
   const srv = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const json = (body: unknown): void => {
@@ -86,6 +89,17 @@ function startStubServer(): Promise<{ server: http.Server; url: string }> {
       });
     }
     if (url.pathname === '/api/hunt') {
+      huntCalls += 1;
+      if (huntCalls > 1) {
+        return json({
+          startedAt: new Date().toISOString(), durationMs: 5, sampledSeconds: 5,
+          feedConnected: true, feedUrl: 'wss://stub',
+          observed: { feedTxSeen: 300, mintsSeen: 90, contractsTracked: 8 },
+          qualified: 0, mintedCollections: 0, dryRun: true, serverForcesDryRun: false,
+          note: 'Sampled 5s; 0 of 8 collections were worth inspecting.',
+          candidates: [],
+        });
+      }
       return json({
         startedAt: new Date().toISOString(), durationMs: 10, sampledSeconds: 5,
         feedConnected: true, feedUrl: 'wss://stub',
@@ -113,6 +127,10 @@ function startStubServer(): Promise<{ server: http.Server; url: string }> {
         }],
       });
     }
+    // Each test navigates fresh, so reset the round counter with the page.
+    // Without this the counter leaks between tests and later ones start on an
+    // "empty round" response.
+    huntCalls = 0;
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(html);
   });
@@ -251,9 +269,9 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     await page.reload({ waitUntil: 'networkidle' });
 
     await page.click('#btnOnce');
-    await page.waitForSelector('#huntOut .row', { timeout: 8000 });
+    await page.waitForSelector('#findings .row', { timeout: 8000 });
 
-    const table = await page.textContent('#huntOut');
+    const table = await page.textContent('#findings');
     expect(table).toContain('90/min');
     expect(table).toContain('passed');
     expect(await page.textContent('#log')).toMatch(/40 mints seen/);
@@ -269,13 +287,37 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     await page.reload({ waitUntil: 'networkidle' });
 
     await page.click('#btnOnce');
-    await page.waitForSelector('#huntOut', { timeout: 8000 });
+    await page.waitForSelector('#findings .row', { timeout: 8000 });
 
-    const shown = await page.textContent('#huntOut');
+    const shown = await page.textContent('#findings');
     expect(shown).toContain('Passed, but not bought');
     expect(shown).toContain('practice mode');
     // And it must be visible without expanding anything.
     expect(await page.textContent('#log')).toContain('NOT BOUGHT');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('keeps a passing collection on screen after a later empty round', async () => {
+    // The reported failure: a round passed a collection, then the next quiet
+    // round replaced the whole panel and the evidence was gone.
+    const { page, errors } = await openPage();
+    await page.evaluate(() => localStorage.setItem('nftmint_token', 'a-token-long-enough'));
+    await page.reload({ waitUntil: 'networkidle' });
+
+    await page.click('#btnOnce');
+    await page.waitForSelector('#findings .row', { timeout: 8000 });
+    expect(await page.textContent('#findings')).toContain('Stub Cats');
+
+    // A second round that finds nothing must not erase it.
+    await page.click('#btnOnce');
+    await page.waitForFunction(
+      () => (document.getElementById('huntOut')?.textContent ?? '').includes('worth inspecting'),
+      null, { timeout: 8000 });
+
+    const kept = await page.textContent('#findings');
+    expect(kept).toContain('Stub Cats');
+    expect(kept).toContain('Passed, but not bought');
     expect(errors).toEqual([]);
     await page.close();
   });

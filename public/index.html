@@ -139,6 +139,7 @@
       <button id="btnOnce" onclick="huntOnce()">One round</button>
       <span id="huntState" class="mute" style="font-size:12.5px"></span>
     </div>
+    <div id="findings"></div>
     <div id="huntOut"></div>
     <div class="log" id="log"><div>No rounds yet.</div></div>
     <details id="rules">
@@ -514,11 +515,50 @@ async function runRound(single){
   if(!single&&hunting) setTimeout(runRound,1200);
 }
 
+/**
+ * Findings persist; the round summary does not.
+ *
+ * Rounds land about every 37 seconds and each one used to replace the whole
+ * panel, so a collection that passed was wiped by the next quiet round before
+ * it could be read. Anything that passed is kept here until the page is
+ * reloaded.
+ */
+var findings=[];
+
 function renderHunt(r){
+  // Anything that cleared every rule is worth keeping on screen.
+  for(var i=0;i<r.candidates.length;i++){
+    var c=r.candidates[i];
+    if(!c.evaluation.passed) continue;
+    findings.unshift({at:new Date(), c:c});
+  }
+  findings=findings.slice(0,10);
+  renderFindings();
+
+  // The per-round line stays transient — it is only ever "what just happened".
   var out=[];
-  if(!r.candidates.length){ $('huntOut').innerHTML=msg('warn',esc(r.note||'Nothing matched.')); return; }
-  for(var i=0;i<r.candidates.length;i++) out.push(candidateBlock(r.candidates[i]));
-  $('huntOut').innerHTML=out.join('');
+  if(!r.candidates.length){
+    $('huntOut').innerHTML='<div class="hint">'+esc(r.note||'Nothing matched this round.')+'</div>';
+  } else {
+    for(var j=0;j<r.candidates.length;j++){
+      if(r.candidates[j].evaluation.passed) continue; // already kept above
+      out.push(candidateBlock(r.candidates[j]));
+    }
+    $('huntOut').innerHTML = out.length
+      ? '<div class="hint" style="margin-top:14px">Checked this round</div>'+out.join('')
+      : '<div class="hint">'+esc(r.note||'')+'</div>';
+  }
+}
+
+function renderFindings(){
+  if(!findings.length){ $('findings').innerHTML=''; return; }
+  var out=['<div class="hint" style="margin-top:14px">Collections that passed — kept until you reload</div>'];
+  for(var i=0;i<findings.length;i++){
+    var f=findings[i];
+    out.push('<div style="margin-top:10px"><div class="k">'+
+      esc(f.at.toLocaleTimeString())+'</div>'+candidateBlock(f.c)+'</div>');
+  }
+  $('findings').innerHTML=out.join('');
 }
 
 function candidateBlock(c){
