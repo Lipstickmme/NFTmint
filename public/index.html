@@ -139,8 +139,8 @@
       <button id="btnOnce" onclick="huntOnce()">One round</button>
       <span id="huntState" class="mute" style="font-size:12.5px"></span>
     </div>
-    <div id="findings"></div>
     <div id="huntOut"></div>
+    <div id="findings"></div>
     <div class="log" id="log"><div>No rounds yet.</div></div>
     <details id="rules">
       <summary>Adjust the rules</summary>
@@ -203,7 +203,7 @@
 
 <script>
 'use strict';
-var PAGE_VERSION = '6-minimal';
+var PAGE_VERSION = '7-history';
 var hunting=false, plan=null, rounds=0, serverDry=false, defaults=null, planTimer=null, seenArt=[];
 
 function $(id){ return document.getElementById(id); }
@@ -211,6 +211,17 @@ function esc(s){ return String(s===null||s===undefined?'':s)
   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   .replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function msg(k,t){ return '<div class="msg '+k+'">'+t+'</div>'; }
+/**
+ * Only schemes that can render or navigate, never ones that can execute.
+ *
+ * Artwork URLs come from token metadata, which is written by whoever deployed
+ * the contract — so a javascript: href is a thing a hostile collection could
+ * try to put in front of whoever is running the bot. Escaping alone does not
+ * stop that; refusing the scheme does.
+ */
+function safeUrl(u){
+  var t=String(u===null||u===undefined?'':u).trim();
+  return /^(https?:|data:image\/)/i.test(t)? t : ''; }
 function shortAddr(a){ return a? a.slice(0,6)+'…'+a.slice(-4) : ''; }
 function fmtDur(s){ if(!isFinite(s))return'—';
   return s<60?Math.round(s)+'s':s<3600?Math.round(s/60)+'m':(s/3600).toFixed(1)+'h'; }
@@ -218,8 +229,9 @@ function fmtDur(s){ if(!isFinite(s))return'—';
 /* row helper: small label above a bold value */
 function row(label, value, opts){
   opts = opts || {};
-  var art = opts.img
-    ? '<img class="thumb" src="'+esc(opts.img)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
+  var img = safeUrl(opts.img);
+  var art = img
+    ? '<img class="thumb" src="'+esc(img)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
     : '';
   var right = opts.right ? '<div class="r-right"><div class="k">'+esc(opts.rightLabel||'')+'</div>'+
       '<div class="v">'+opts.right+'</div></div>' : '';
@@ -310,8 +322,9 @@ function log(t,cls){ var el=$('log');
 
 /* remember artwork seen, shown as the thumbnail row */
 function noteArt(url){
-  if(!url || seenArt.indexOf(url)>=0) return;
-  seenArt.unshift(url); seenArt=seenArt.slice(0,5); renderThumbs(); }
+  var u=safeUrl(url);
+  if(!u || seenArt.indexOf(u)>=0) return;
+  seenArt.unshift(u); seenArt=seenArt.slice(0,5); renderThumbs(); }
 function renderThumbs(){
   if(!seenArt.length){ $('thumbs').innerHTML=''; return; }
   var out=[];
@@ -343,6 +356,8 @@ async function boot(){
   }catch(e){ $('alert').innerHTML=msg('err',esc(e.message)); }
 
   if(!tok()){ $('stats').innerHTML=row('status','<span class="bad">add your token below</span>'); return; }
+
+  loadFindings();
 
   try{
     var s=await api('/api/status');
@@ -392,7 +407,7 @@ async function doPlan(){
 }
 
 function renderPlan(p){
-  var i=p.info||{}, art=(i.preview&&i.preview.imageUrl)||'', out=[];
+  var i=p.info||{}, art=safeUrl(i.preview&&i.preview.imageUrl), out=[];
   if(art) noteArt(art);
 
   out.push(p.ready? msg('ok',esc(p.advice)) : msg(i.soldOut?'err':'warn',esc(p.advice)));
@@ -460,7 +475,7 @@ async function doMint(){
     else out.push(msg('err','Nothing confirmed ('+r.failed+' failed).'));
     for(var i=0;i<r.transactions.length;i++){ var t=r.transactions[i];
       out.push(row(shortAddr(t.from), t.accepted?'<span class="ok">sent</span>':'<span class="bad">rejected</span>',
-        {right:'<a href="'+esc(t.url)+'" target="_blank" rel="noopener">'+esc(t.hash.slice(0,10))+'…</a>',
+        {right:'<a href="'+esc(safeUrl(t.url))+'" target="_blank" rel="noopener">'+esc(t.hash.slice(0,10))+'…</a>',
          rightLabel:'tx'})); }
     $('mintOut').innerHTML=out.join(''); boot();
   }catch(e){ $('mintOut').innerHTML=msg('err',esc(e.message)); }
@@ -495,6 +510,7 @@ async function runRound(single){
     if(r.skipped){ log('Skipped — a round was already running.'); }
     else{
       renderHunt(r);
+      loadFindings();
       log(r.observed.mintsSeen+' mints seen · '+r.candidates.length+' checked · '+r.qualified+
           ' passed'+(r.mintedCollections?' · '+r.mintedCollections+' BOUGHT':''));
       // Name anything that cleared every rule but still was not bought.
@@ -516,49 +532,131 @@ async function runRound(single){
 }
 
 /**
- * Findings persist; the round summary does not.
+ * History lives on the server, not in this page.
  *
- * Rounds land about every 37 seconds and each one used to replace the whole
- * panel, so a collection that passed was wiped by the next quiet round before
- * it could be read. Anything that passed is kept here until the page is
- * reloaded.
+ * A hunt report only ever describes the round that just ran, so a collection
+ * found ten minutes ago was gone the moment a quieter round replaced it — and
+ * a reload wiped even that. /api/findings keeps everything that passed, plus
+ * everything that missed by only a rule or two, so "did it ever see anything
+ * good, and why did it not buy?" stays answerable hours later.
  */
-var findings=[];
+var histFilter='all', histData=null;
 
-function renderHunt(r){
-  // Anything that cleared every rule is worth keeping on screen.
-  for(var i=0;i<r.candidates.length;i++){
-    var c=r.candidates[i];
-    if(!c.evaluation.passed) continue;
-    findings.unshift({at:new Date(), c:c});
-  }
-  findings=findings.slice(0,10);
-  renderFindings();
+function setHistFilter(f){ histFilter=f; loadFindings(); }
 
-  // The per-round line stays transient — it is only ever "what just happened".
-  var out=[];
-  if(!r.candidates.length){
-    $('huntOut').innerHTML='<div class="hint">'+esc(r.note||'Nothing matched this round.')+'</div>';
-  } else {
-    for(var j=0;j<r.candidates.length;j++){
-      if(r.candidates[j].evaluation.passed) continue; // already kept above
-      out.push(candidateBlock(r.candidates[j]));
-    }
-    $('huntOut').innerHTML = out.length
-      ? '<div class="hint" style="margin-top:14px">Checked this round</div>'+out.join('')
-      : '<div class="hint">'+esc(r.note||'')+'</div>';
+async function loadFindings(){
+  if(!tok()){ $('findings').innerHTML=''; return; }
+  try{
+    histData=await api('/api/findings?limit=50&filter='+encodeURIComponent(histFilter));
+    renderFindings();
+  }catch(e){
+    // History is a convenience. It must never take the hunt panel down with it.
+    $('findings').innerHTML=msg('warn','Could not load history — '+esc(e.message));
   }
 }
 
+async function clearFindings(){
+  if(!confirm('Delete the saved history?\n\nHunting is unaffected — only the record goes.')) return;
+  try{ await api('/api/findings',{method:'DELETE'}); await loadFindings(); }
+  catch(e){ $('findings').innerHTML=msg('err',esc(e.message)); }
+}
+
+var HIST_TABS=[['all','Everything'],['passed','Passed'],['near','Near misses']];
+
 function renderFindings(){
-  if(!findings.length){ $('findings').innerHTML=''; return; }
-  var out=['<div class="hint" style="margin-top:14px">Collections that passed — kept until you reload</div>'];
-  for(var i=0;i<findings.length;i++){
-    var f=findings[i];
-    out.push('<div style="margin-top:10px"><div class="k">'+
-      esc(f.at.toLocaleTimeString())+'</div>'+candidateBlock(f.c)+'</div>');
+  var d=histData;
+  if(!d){ $('findings').innerHTML=''; return; }
+
+  var tabs='';
+  for(var t=0;t<HIST_TABS.length;t++)
+    tabs+='<button class="'+(histFilter===HIST_TABS[t][0]?'solid':'')+'" onclick="setHistFilter(\''+
+      HIST_TABS[t][0]+'\')">'+esc(HIST_TABS[t][1])+'</button>';
+
+  var head='<div class="hint" style="margin-top:20px"><b>History</b> — '+
+    esc(d.durable? 'saved on the server, survives restarts'
+                 : 'held in memory only, cleared when the server restarts')+'</div>'+
+    '<div class="acts">'+tabs+
+    (d.count? '<button class="link" onclick="clearFindings()">clear</button>' : '')+
+    '<span class="mute" style="font-size:12.5px">'+esc(d.passed)+' passed · '+
+    esc(d.nearMisses)+' near miss'+(d.nearMisses===1?'':'es')+'</span></div>';
+
+  if(!d.findings.length){
+    $('findings').innerHTML=head+'<div class="hint">Nothing kept yet. Collections that pass every '+
+      'rule — and ones that miss by a rule or two — are saved here as rounds run.</div>';
+    return;
   }
+
+  var out=[head];
+  for(var i=0;i<d.findings.length;i++) out.push(findingBlock(d.findings[i]));
   $('findings').innerHTML=out.join('');
+}
+
+/** Addresses only. Anything else never reaches an inline handler. */
+function addrOnly(a){ return /^0x[0-9a-fA-F]{40}$/.test(String(a))? String(a) : ''; }
+
+function findingBlock(f){
+  if(f.imageUrl) noteArt(f.imageUrl);
+
+  var chip=f.passed? '<span class="chip buy">passed</span>'
+                   : '<span class="chip skip">near miss</span>';
+  var left=f.remaining!==undefined&&f.remaining!==null? esc(f.remaining)+' left' : '—';
+  var head=row(esc(f.name||shortAddr(f.contract)),
+    esc(f.mintsPerMinute)+'/min <span class="mute">· '+esc(f.uniqueMinters)+' wallets · '+left+
+    '</span>',
+    {img:f.imageUrl, sel:f.passed, right:chip, rightLabel:
+      f.projectedSelloutSec!==undefined&&f.projectedSelloutSec!==null
+        ? 'sellout ~'+fmtDur(f.projectedSelloutSec) : ''});
+
+  var when='<div class="hint">first seen '+esc(fmtWhen(f.firstSeenAt))+
+    ' · last '+esc(fmtWhen(f.lastSeenAt))+
+    (f.timesSeen>1? ' · seen in '+esc(f.timesSeen)+' rounds' : '')+'</div>';
+
+  // The one line that says what actually became of it.
+  var verdict;
+  if(f.minted>0) verdict=msg('ok','Bought — '+esc(f.minted)+' confirmed.');
+  else if(f.outcome) verdict=msg('warn','<b>Passed, but not bought.</b><br>'+esc(f.outcome));
+  else if(f.failedChecks&&f.failedChecks.length)
+    verdict='<div class="hint">Missed on <b>'+esc(f.failedChecks.join(', '))+'</b> — loosen '+
+      'those under “Adjust the rules” to catch one like it next time.</div>';
+  else verdict='<div class="hint">'+esc(f.reason)+'</div>';
+
+  var links='';
+  for(var i=0;i<(f.txUrls||[]).length;i++){
+    var href=safeUrl(f.txUrls[i]);
+    if(href) links+='<div class="hint"><a href="'+esc(href)+'" target="_blank" rel="noopener">'+
+      'transaction '+(i+1)+'</a></div>';
+  }
+
+  var addr=addrOnly(f.contract);
+  var act=addr? '<div class="acts"><button class="link" onclick="pick(\''+addr+
+    '\')">mint this by hand</button></div>' : '';
+
+  return '<div style="margin-top:14px">'+head+when+verdict+links+act+'</div>';
+}
+
+function fmtWhen(iso){
+  var d=new Date(iso);
+  return isNaN(d.getTime())? '—' : d.toLocaleTimeString();
+}
+
+/**
+ * The per-round panel is transient by design: it is "what just happened", and
+ * the durable half now lives in the history above, so nothing is lost by
+ * replacing it wholesale each round.
+ */
+function renderHunt(r){
+  if(!r.candidates.length){
+    $('huntOut').innerHTML='<div class="hint" style="margin-top:14px">'+
+      esc(r.note||'Nothing matched this round.')+'</div>';
+    return;
+  }
+  // Passers first — they are the reason the round ran.
+  var sorted=r.candidates.slice().sort(function(a,b){
+    return (b.evaluation.passed?1:0)-(a.evaluation.passed?1:0); });
+  var out=['<div class="hint" style="margin-top:14px">This round — '+esc(r.candidates.length)+
+    ' checked, '+esc(r.qualified)+' passed</div>'];
+  for(var i=0;i<sorted.length;i++) out.push(candidateBlock(sorted[i]));
+  $('huntOut').innerHTML=out.join('');
 }
 
 function candidateBlock(c){
@@ -606,9 +704,11 @@ function candidateBlock(c){
 
 function txLinks(m){
   var out='';
-  for(var i=0;i<(m.txs||[]).length;i++)
-    out+='<div class="hint"><a href="'+esc(m.txs[i].url)+'" target="_blank" rel="noopener">'+
+  for(var i=0;i<(m.txs||[]).length;i++){
+    var href=safeUrl(m.txs[i].url);
+    if(href) out+='<div class="hint"><a href="'+esc(href)+'" target="_blank" rel="noopener">'+
       esc(m.txs[i].hash.slice(0,16))+'…</a></div>';
+  }
   return out;
 }
 

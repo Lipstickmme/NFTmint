@@ -43,6 +43,11 @@
       "maxDuration": 15,
       "memory": 256,
       "includeFiles": "src/**"
+    },
+    "api/findings.ts": {
+      "maxDuration": 15,
+      "memory": 256,
+      "includeFiles": "src/**"
     }
   },
   "headers": [

@@ -27,13 +27,18 @@ const uiPath = path.join(
 let browser: Browser;
 let server: http.Server;
 let baseUrl: string;
+let resetStub: () => void = () => {};
 
 /** Serves the page plus just enough of the API for the UI to boot. */
-function startStubServer(): Promise<{ server: http.Server; url: string }> {
+function startStubServer(): Promise<{ server: http.Server; url: string; reset: () => void }> {
   const html = readFileSync(uiPath, 'utf8');
   // Rounds after the first return nothing, reproducing the case where a quiet
   // round used to wipe a finding off the screen.
   let huntCalls = 0;
+  // Stands in for the server-side history, keyed by contract like the real
+  // store, so the persistence tests exercise the round-trip rather than a
+  // variable the page happens to be holding.
+  let kept: Record<string, unknown>[] = [];
   const srv = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const json = (body: unknown): void => {
@@ -44,7 +49,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string }> {
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        build: { uiVersion: '6-minimal', commit: 'testing', deployedAt: 'local' },
+        build: { uiVersion: '7-history', commit: 'testing', deployedAt: 'local' },
         configured: { apiToken: true, privateKeys: true, rpcUrls: true, network: 'testnet', spendCeilingEth: '0.05', upstreamTracker: false },
         problems: [],
       });
@@ -88,8 +93,52 @@ function startStubServer(): Promise<{ server: http.Server; url: string }> {
         advice: 'Ready to mint using mint(uint256) (free). Press Mint.',
       });
     }
+    if (url.pathname === '/api/findings') {
+      if (req.method === 'DELETE') {
+        kept = [];
+        return json({ cleared: true, storage: 'memory' });
+      }
+      const filter = url.searchParams.get('filter') ?? 'all';
+      const rows = kept.filter((r) =>
+        filter === 'passed' ? r.passed : filter === 'near' ? !r.passed : true,
+      );
+      return json({
+        storage: 'memory',
+        durable: false,
+        count: rows.length,
+        passed: rows.filter((r) => r.passed).length,
+        nearMisses: rows.filter((r) => !r.passed).length,
+        findings: rows,
+      });
+    }
     if (url.pathname === '/api/hunt') {
       huntCalls += 1;
+      if (huntCalls === 1) {
+        // The real cycle records passers and near misses before returning.
+        const now = new Date().toISOString();
+        kept = [
+          {
+            contract: '0x00000000000000000000000000000000000000aa',
+            name: 'Stub Cats', firstSeenAt: now, lastSeenAt: now, timesSeen: 1,
+            mintsPerMinute: 90, uniqueMinters: 22, remaining: '700', progressPct: 30,
+            projectedSelloutSec: 466, isFree: true, passed: true, failedChecks: [],
+            reason: 'qualified: 90/min from 22 wallets',
+            outcome: 'practice mode — everything was prepared and signed, but nothing was sent.',
+            minted: 0, txUrls: [],
+          },
+          {
+            contract: '0x00000000000000000000000000000000000000bb',
+            name: 'Almost Dogs', firstSeenAt: now, lastSeenAt: now, timesSeen: 2,
+            mintsPerMinute: 44, uniqueMinters: 6, isFree: true, passed: false,
+            failedChecks: ['unique minters'],
+            reason: 'skipped: 6 wallets, needs 8',
+            // Artwork and explorer URLs are attacker-influenced: token metadata
+            // is written by whoever deployed the contract.
+            imageUrl: 'javascript:alert(1)',
+            txUrls: ['javascript:alert(2)'],
+          },
+        ];
+      }
       if (huntCalls > 1) {
         return json({
           startedAt: new Date().toISOString(), durationMs: 5, sampledSeconds: 5,
@@ -127,23 +176,32 @@ function startStubServer(): Promise<{ server: http.Server; url: string }> {
         }],
       });
     }
-    // Each test navigates fresh, so reset the round counter with the page.
-    // Without this the counter leaks between tests and later ones start on an
-    // "empty round" response.
-    huntCalls = 0;
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(html);
   });
 
+  // Reset is explicit rather than tied to serving the page: a test that
+  // reloads to prove the history survived must not have the reload be what
+  // clears it.
+  const reset = (): void => {
+    huntCalls = 0;
+    kept = [];
+  };
+
   return new Promise((resolve) => {
     srv.listen(0, '127.0.0.1', () => {
-      resolve({ server: srv, url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}` });
+      resolve({
+        server: srv,
+        url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}`,
+        reset,
+      });
     });
   });
 }
 
 /** Fails the test on any uncaught page error — the exact failure that shipped. */
 async function openPage(): Promise<{ page: Page; errors: string[] }> {
+  resetStub();
   const page = await browser.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -192,6 +250,7 @@ beforeAll(async () => {
   const started = await startStubServer();
   server = started.server;
   baseUrl = started.url;
+  resetStub = started.reset;
 }, 90_000);
 
 afterAll(async () => {
@@ -269,11 +328,12 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     await page.reload({ waitUntil: 'networkidle' });
 
     await page.click('#btnOnce');
-    await page.waitForSelector('#findings .row', { timeout: 8000 });
+    await page.waitForSelector('#huntOut .row', { timeout: 8000 });
 
-    const table = await page.textContent('#findings');
-    expect(table).toContain('90/min');
-    expect(table).toContain('passed');
+    // The round panel carries the full reasoning for what it just checked.
+    const round = await page.textContent('#huntOut');
+    expect(round).toContain('90/min');
+    expect(round).toContain('mint rate');
     expect(await page.textContent('#log')).toMatch(/40 mints seen/);
     expect(errors).toEqual([]);
     await page.close();
@@ -287,9 +347,9 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     await page.reload({ waitUntil: 'networkidle' });
 
     await page.click('#btnOnce');
-    await page.waitForSelector('#findings .row', { timeout: 8000 });
+    await page.waitForSelector('#huntOut .row', { timeout: 8000 });
 
-    const shown = await page.textContent('#findings');
+    const shown = await page.textContent('#huntOut');
     expect(shown).toContain('Passed, but not bought');
     expect(shown).toContain('practice mode');
     // And it must be visible without expanding anything.
@@ -298,9 +358,10 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     await page.close();
   });
 
-  it('keeps a passing collection on screen after a later empty round', async () => {
+  it('keeps a passing collection after a later empty round', async () => {
     // The reported failure: a round passed a collection, then the next quiet
-    // round replaced the whole panel and the evidence was gone.
+    // round replaced the whole panel and the evidence was gone. The record now
+    // lives on the server, so the empty round can wipe the panel harmlessly.
     const { page, errors } = await openPage();
     await page.evaluate(() => localStorage.setItem('nftmint_token', 'a-token-long-enough'));
     await page.reload({ waitUntil: 'networkidle' });
@@ -309,7 +370,6 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     await page.waitForSelector('#findings .row', { timeout: 8000 });
     expect(await page.textContent('#findings')).toContain('Stub Cats');
 
-    // A second round that finds nothing must not erase it.
     await page.click('#btnOnce');
     await page.waitForFunction(
       () => (document.getElementById('huntOut')?.textContent ?? '').includes('worth inspecting'),
@@ -318,6 +378,63 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     const kept = await page.textContent('#findings');
     expect(kept).toContain('Stub Cats');
     expect(kept).toContain('Passed, but not bought');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('reloads the saved history after a refresh', async () => {
+    // The whole point of the backend: the record must outlive the page.
+    const { page, errors } = await openPage();
+    await page.evaluate(() => localStorage.setItem('nftmint_token', 'a-token-long-enough'));
+    await page.reload({ waitUntil: 'networkidle' });
+
+    await page.click('#btnOnce');
+    await page.waitForSelector('#findings .row', { timeout: 8000 });
+
+    // A fresh page holds nothing itself, so anything shown came from the server.
+    await page.goto(baseUrl, { waitUntil: 'networkidle' });
+    await page.waitForSelector('#findings .row', { timeout: 8000 });
+    expect(await page.textContent('#findings')).toContain('Stub Cats');
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 20_000);
+
+  it('filters the history down to near misses', async () => {
+    const { page, errors } = await openPage();
+    await page.evaluate(() => localStorage.setItem('nftmint_token', 'a-token-long-enough'));
+    await page.reload({ waitUntil: 'networkidle' });
+
+    await page.click('#btnOnce');
+    await page.waitForSelector('#findings .row', { timeout: 8000 });
+    expect(await page.textContent('#findings')).toContain('Almost Dogs');
+
+    await page.click('#findings button:has-text("Near misses")');
+    await page.waitForFunction(
+      () => !(document.getElementById('findings')?.textContent ?? '').includes('Stub Cats'),
+      null, { timeout: 8000 });
+
+    const near = await page.textContent('#findings');
+    expect(near).toContain('Almost Dogs');
+    // A near miss names what to loosen, which is the reason to keep it at all.
+    expect(near).toContain('unique minters');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('refuses to render a javascript: URL from collection metadata', async () => {
+    const { page, errors } = await openPage();
+    await page.evaluate(() => localStorage.setItem('nftmint_token', 'a-token-long-enough'));
+    await page.reload({ waitUntil: 'networkidle' });
+
+    await page.click('#btnOnce');
+    await page.waitForSelector('#findings .row', { timeout: 8000 });
+
+    const hostile = await page.evaluate(() =>
+      [...document.querySelectorAll('[src],[href]')]
+        .map((el) => el.getAttribute('src') ?? el.getAttribute('href') ?? '')
+        .filter((v) => v.toLowerCase().startsWith('javascript:')),
+    );
+    expect(hostile).toEqual([]);
     expect(errors).toEqual([]);
     await page.close();
   });

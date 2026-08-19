@@ -99,6 +99,10 @@ redeploy to mint a different contract.
 **Optional, for a persistent tracker:** `TRACKER_UPSTREAM_URL`,
 `TRACKER_UPSTREAM_TOKEN`.
 
+**Optional, to keep the history:** `KV_REST_API_URL`, `KV_REST_API_TOKEN` —
+see [Keeping a history](#keeping-a-history) below. Without them the history
+works, but only in memory.
+
 ### 4. Deploy
 
 ```bash
@@ -165,6 +169,60 @@ it is not proof of anything. The endpoint therefore only honours it when paired
 with a matching `CRON_SECRET`; without one, a cron-shaped request is treated
 like any other and must present `API_TOKEN`. Set `CRON_SECRET` in your
 environment and Vercel passes it automatically.
+
+## Keeping a history
+
+The **History** panel under the hunt controls lists every collection that
+passed every rule, plus every one that missed by only a rule or two. Near
+misses are the useful half for tuning: each row names the rules it failed, so
+"loosen this one number and it would have bought" is visible rather than
+guessed at.
+
+This is a separate concern from the round panel above it. A hunt report only
+ever describes the round that produced it, so the round panel is replaced every
+~40 seconds and a page reload used to lose everything.
+
+**By default it works with no setup, but only in memory.** Serverless instances
+are recycled constantly and every instance has its own copy, so on Vercel a
+memory-backed history will appear to reset at random. The panel says which mode
+it is in, so you are never guessing.
+
+To make it durable:
+
+1. Vercel dashboard → **Storage** → create a **KV / Upstash Redis** database.
+2. Connect it to this project.
+
+Vercel injects `KV_REST_API_URL` and `KV_REST_API_TOKEN` on the next deploy and
+the bot picks them up automatically — there is no code change and no migration.
+`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` are accepted too, if you
+provision Upstash directly.
+
+Records are keyed by contract, so a collection seen across twenty rounds stays
+one row with a `seen in N rounds` count rather than twenty duplicates. The
+store holds the 200 most recent and expires after 30 days.
+
+Running on a persistent host instead of Vercel? Set `FINDINGS_FILE` to a path
+and it writes a JSON file. It is ignored when the KV variables are present.
+
+The endpoint behind the panel:
+
+```bash
+# every kept collection, newest first
+curl -H "Authorization: Bearer $API_TOKEN" https://your-app.vercel.app/api/findings
+
+# just the near misses, with the rules each one failed
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "https://your-app.vercel.app/api/findings?filter=near"
+
+# start over
+curl -X DELETE -H "Authorization: Bearer $API_TOKEN" \
+  https://your-app.vercel.app/api/findings
+```
+
+It is authenticated like every other route: the history names contracts your
+wallets bought and what happened to each attempt.
+
+---
 
 ## Scheduled mints with Vercel Cron
 

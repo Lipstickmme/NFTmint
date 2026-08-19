@@ -16,6 +16,8 @@ import { submitAll, waitForReceipts } from './submit.js';
 import { loadWallets, NonceManager, type Wallet } from './wallet.js';
 import { explorerTxUrl } from './chain.js';
 import { errorMessage } from './http.js';
+import { isNearMiss, toFinding } from './findings.js';
+import { recordFinding } from './store.js';
 import { log } from './logger.js';
 
 /**
@@ -231,6 +233,17 @@ export async function runHuntCycle(
   }
 
   const qualified = candidates.filter((c) => c.evaluation.passed).length;
+
+  // ── 6. Remember what was worth remembering ───────────────────────────────
+  // Written after the loop so every record carries its final mint outcome
+  // rather than the state it had mid-round. Only passers and near misses are
+  // kept: a collection that failed five rules is noise, but one that failed a
+  // single threshold is exactly what an operator wants to see when deciding
+  // whether the criteria are too tight.
+  const worthKeeping = candidates
+    .map((c) => toFinding(c))
+    .filter((f) => f.passed || isNearMiss(f.failedChecks.length));
+  await Promise.all(worthKeeping.map((f) => recordFinding(f, base)));
 
   return {
     startedAt,

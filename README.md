@@ -269,6 +269,7 @@ RPC_URLS=https://your-dedicated-endpoint
 | `POST /api/mint` | Pre-sign and broadcast now |
 | `GET /api/scan` | Sample the feed, rank by mint velocity |
 | `GET /api/hunt` | One full cycle: watch → judge → mint what qualifies |
+| `GET /api/findings` | Everything the hunter kept — passers and near misses. `DELETE` clears it |
 
 ### You don't need to know the ABI
 
@@ -325,6 +326,43 @@ still need a price ceiling set in the environment.
 (practice signs everything but never broadcasts). To force practice mode
 server-side so the browser cannot turn it live — useful when handing someone a
 deployment — set `HUNT_DRY_RUN=true`.
+
+### The history: what it found, and what it nearly bought
+
+A hunt report only describes the round that produced it. Rounds land roughly
+every 40 seconds, so without somewhere to put them, a collection found ten
+minutes ago is gone — and a page reload lost even the current one.
+
+`/api/findings` keeps two things:
+
+- **Passers** — everything that cleared all seven checks, with what became of
+  the buy: confirmed mints and their transaction links, or the exact reason
+  nothing was sent (per-wallet limit hit, sale closed between scan and attempt,
+  no wallet holds gas).
+- **Near misses** — anything that failed only one or two checks, with those
+  checks named. This is the tuning signal: "loosen *this* number and it would
+  have bought" beats guessing at thresholds.
+
+Records are keyed by contract, so a collection seen across twenty rounds is one
+row with a round count, not twenty duplicates — and it never loses the fact
+that it once passed or was once bought.
+
+Storage is picked from the environment, with no code change between them:
+
+| When | Where | Survives |
+| --- | --- | --- |
+| Vercel KV / Upstash attached | Redis over REST | restarts, redeploys, every instance |
+| `FINDINGS_FILE` set | a JSON file | restarts on that host |
+| neither | process memory | nothing — and the panel says so |
+
+On Vercel the memory fallback means the list appears to reset at random, since
+instances are recycled and each has its own copy. Attaching a KV database from
+the Storage tab injects `KV_REST_API_URL` and `KV_REST_API_TOKEN`, and the bot
+switches over on the next deploy. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#keeping-a-history).
+
+Every write is fail-soft: a round that cannot reach the store logs a warning
+and carries on minting. Losing a log line is cheaper than losing the mint.
 
 ### What serverless can and can't do here
 
@@ -436,6 +474,9 @@ src/
   mintdetect.ts  Mint-selector registry and free/paid classification
   tracker.ts     Per-contract velocity, unique minters, hot detection
   autopilot.ts   Mass-mint orchestration with budget and safety rails
+  hunt.ts        One cycle: watch the feed, judge, buy what qualifies
+  findings.ts    The record of a found collection, and how repeats fold together
+  store.ts       Where that record lives: Vercel KV, a file, or memory
   server.ts      Tracker HTTP API + self-contained dashboard
   service.ts     Service layer behind the web API (status/preflight/mint/scan)
   http.ts        Auth, JSON safety, and the shared route wrapper
@@ -445,7 +486,7 @@ src/
   cli.ts         Command-line entry point
 api/             Vercel serverless routes
 public/index.html  The web UI
-test/            168 tests, incl. end-to-end runs against a mock node
+test/            329 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```

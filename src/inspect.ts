@@ -149,7 +149,11 @@ export async function balanceOf(
   wallet: Address,
 ): Promise<bigint | undefined> {
   try {
-    const fn = parseFunction('balanceOf(address) (uint256)');
+    // `returns` is not optional here: parseAbiItem rejects the bare
+    // "balanceOf(address) (uint256)" form, and because the failure is swallowed
+    // by the catch below, that typo silently disabled skip-if-owned entirely —
+    // every repeating hunt re-bought what it already held.
+    const fn = parseFunction('balanceOf(address) view returns (uint256)');
     const data = encodeFunctionData({
       abi: [fn] as Abi,
       functionName: 'balanceOf',
