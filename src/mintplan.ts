@@ -170,7 +170,7 @@ export async function buildMintPlan(
     });
   }
 
-  const info = await inspectContract(client, contract, wallet);
+  const info = await inspectContract(client, contract, wallet, true);
   const blockers: string[] = [];
 
   if (!info.hasCode) {

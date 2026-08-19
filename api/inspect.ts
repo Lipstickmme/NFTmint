@@ -24,7 +24,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     const client = new RpcClient(cfg.rpcUrls[0], { timeoutMs: 8_000 });
     try {
       const wallet = loadWallets(cfg.privateKeys)[0]?.address;
-      return await inspectContract(client, contract as Address, wallet);
+      return await inspectContract(client, contract as Address, wallet, true);
     } finally {
       client.destroy();
     }

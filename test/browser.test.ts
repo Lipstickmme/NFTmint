@@ -41,7 +41,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string }> {
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        build: { uiVersion: '5-glass', commit: 'testing', deployedAt: 'local' },
+        build: { uiVersion: '6-minimal', commit: 'testing', deployedAt: 'local' },
         configured: { apiToken: true, privateKeys: true, rpcUrls: true, network: 'testnet', spendCeilingEth: '0.05', upstreamTracker: false },
         problems: [],
       });
@@ -105,6 +105,10 @@ function startStubServer(): Promise<{ server: http.Server; url: string }> {
             contract: '0x00000000000000000000000000000000000000aa', passed: true,
             projectedSelloutSec: 466, reason: 'qualified: 90/min from 22 wallets',
             checks: [{ name: 'mint rate', passed: true, actual: '90/min', required: '>= 30/min', why: 'Fast means selling out.' }],
+          },
+          minted: {
+            attempted: 0, accepted: 0, confirmed: 0, txs: [],
+            error: 'practice mode — everything was prepared and signed, but nothing was sent.',
           },
         }],
       });
@@ -213,10 +217,10 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     await page.evaluate(() => localStorage.setItem('nftmint_token', 'a-token-long-enough'));
     await page.reload({ waitUntil: 'networkidle' });
 
-    const strip = await page.textContent('#strip');
+    const strip = await page.textContent('#stats');
     expect(strip).toContain('testnet');
     expect(strip).toContain('4242');
-    expect(strip).toMatch(/1 of 1/);
+    expect(strip).toMatch(/1 \/ 1/);
     expect(errors).toEqual([]);
     await page.close();
   });
@@ -235,7 +239,8 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     const plan = await page.textContent('#planOut');
     expect(plan).toContain('Ready to mint');
     expect(plan).toContain('mint(uint256)');
-    expect(plan).toContain('700 left');
+    expect(plan).toContain('700');
+    expect(plan).toContain('left');
     expect(errors).toEqual([]);
     await page.close();
   });
@@ -246,25 +251,50 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     await page.reload({ waitUntil: 'networkidle' });
 
     await page.click('#btnOnce');
-    await page.waitForSelector('#huntOut table', { timeout: 8000 });
+    await page.waitForSelector('#huntOut .row', { timeout: 8000 });
 
     const table = await page.textContent('#huntOut');
     expect(table).toContain('90/min');
-    expect(table).toContain('buy');
+    expect(table).toContain('passed');
     expect(await page.textContent('#log')).toMatch(/40 mints seen/);
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('shows why a passing collection was not bought', async () => {
+    // The reported failure: a collection cleared every rule and nothing
+    // happened, with the reason hidden inside a collapsed section.
+    const { page, errors } = await openPage();
+    await page.evaluate(() => localStorage.setItem('nftmint_token', 'a-token-long-enough'));
+    await page.reload({ waitUntil: 'networkidle' });
+
+    await page.click('#btnOnce');
+    await page.waitForSelector('#huntOut', { timeout: 8000 });
+
+    const shown = await page.textContent('#huntOut');
+    expect(shown).toContain('Passed, but not bought');
+    expect(shown).toContain('practice mode');
+    // And it must be visible without expanding anything.
+    expect(await page.textContent('#log')).toContain('NOT BOUGHT');
     expect(errors).toEqual([]);
     await page.close();
   });
 
   it('toggles between practice and live mode', async () => {
     const { page, errors } = await openPage();
-    expect(await page.textContent('#modebar')).toContain('Live');
+    await page.evaluate(() => localStorage.setItem('nftmint_token', 'a-token-long-enough'));
+    await page.reload({ waitUntil: 'networkidle' });
 
-    await page.click('button:has-text("Switch to practice")');
-    expect(await page.textContent('#modebar')).toContain('Practice mode');
+    expect(await page.textContent('#stats')).toContain('Live');
+    await page.click('button:has-text("practice")');
+    await page.waitForFunction(
+      () => (document.getElementById('stats')?.textContent ?? '').includes('Practice'),
+      null, { timeout: 5000 });
 
-    await page.click('button:has-text("Switch to live buying")');
-    expect(await page.textContent('#modebar')).toContain('Live');
+    await page.click('button:has-text("go live")');
+    await page.waitForFunction(
+      () => (document.getElementById('stats')?.textContent ?? '').includes('Live'),
+      null, { timeout: 5000 });
     expect(errors).toEqual([]);
     await page.close();
   });
@@ -275,8 +305,8 @@ describe.skipIf(!chromiumPath)('control panel in a browser', () => {
     await page.reload({ waitUntil: 'networkidle' });
 
     const form = await page.textContent('#rulesForm');
-    expect(form).toContain('Minimum different wallets');
-    expect(form).toContain('using the default');
+    expect(form).toContain('Min different wallets');
+    expect(form).toContain('default');
     expect(await page.inputValue('#rulesForm input[type=number]')).toBe('30');
     expect(errors).toEqual([]);
     await page.close();

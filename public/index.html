@@ -4,807 +4,583 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>NFTmint — Robinhood Chain</title>
+<title>NFTmint</title>
 <style>
   :root{
-    --bg0:#070910; --bg1:#0d1120; --glass:rgba(255,255,255,.055);
-    --glass-hi:rgba(255,255,255,.10); --stroke:rgba(255,255,255,.11);
-    --fg:#eaeefb; --dim:#98a1bd; --faint:#6d768f;
-    --a1:#7c5cff; --a2:#22d3ee; --ok:#34e5a0; --warn:#ffb454; --err:#ff6b81;
-    --r:16px; --rs:11px;
+    --bg:#e8e8ea; --card:#fbfbfc; --ink:#0b0b0d; --mute:#8b8b93; --line:#e6e6ea;
+    --pill:#0b0b0d; --pill-ink:#fff; --ok:#0f9d58; --warn:#b26b00; --err:#d93646;
+    --r:26px; --rs:16px;
   }
-  @media (prefers-color-scheme: light){
-    :root{ --bg0:#eef1f8; --bg1:#f8fafd; --glass:rgba(255,255,255,.72);
-      --glass-hi:rgba(255,255,255,.9); --stroke:rgba(16,20,40,.10);
-      --fg:#141827; --dim:#535d78; --faint:#7d86a1; }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#0d0d0f; --card:#161619; --ink:#f4f4f6; --mute:#8b8b93; --line:#232327;
+           --pill:#f4f4f6; --pill-ink:#0b0b0d; --ok:#3ddc97; --warn:#ffb454; --err:#ff6b81; }
   }
   *{box-sizing:border-box}
-  html,body{min-height:100%}
-  /* The body gradient is fixed to the viewport, so it paints nothing below the
-     fold on a long page and the bare page shows through as white. Painting the
-     base colour on <html> backs the whole document, including overscroll. */
-  html{background:var(--bg0)}
-  body{
-    margin:0; padding:26px 20px 60px; color:var(--fg);
-    font:14.5px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;
-    background:
-      radial-gradient(1100px 620px at 12% -8%, rgba(124,92,255,.20), transparent 62%),
-      radial-gradient(900px 560px at 92% 4%, rgba(34,211,238,.16), transparent 60%),
-      linear-gradient(168deg,var(--bg0),var(--bg1));
-    background-attachment:fixed;
-    -webkit-font-smoothing:antialiased;
-  }
-  .shell{max-width:900px;margin:0 auto}
-  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+  html{background:var(--bg)}
+  body{margin:0;padding:22px 16px 56px;background:var(--bg);color:var(--ink);
+    font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;
+    -webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+  .shell{max-width:760px;margin:0 auto}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em}
 
-  /* ── glass ─────────────────────────────────────────────────────────── */
-  .glass{
-    background:var(--glass); border:1px solid var(--stroke); border-radius:var(--r);
-    backdrop-filter:blur(18px) saturate(150%); -webkit-backdrop-filter:blur(18px) saturate(150%);
-    box-shadow:0 10px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.07);
-  }
-  .card{padding:22px;margin-bottom:16px}
+  .card{background:var(--card);border-radius:var(--r);padding:22px;margin-bottom:14px}
+  .head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}
+  h1{font-size:26px;font-weight:800;margin:0;letter-spacing:-.035em}
+  h2{font-size:20px;font-weight:750;margin:0 0 4px;letter-spacing:-.03em}
+  .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+  .lede{color:var(--mute);font-size:14px;margin:6px 0 0}
+  .hint{color:var(--mute);font-size:12.5px;margin-top:8px;line-height:1.5}
+  .mute{color:var(--mute)} .ok{color:var(--ok)} .bad{color:var(--err)} .warnc{color:var(--warn)}
 
-  header{margin-bottom:18px}
-  .brand{display:flex;align-items:center;gap:11px}
-  .dot{width:11px;height:11px;border-radius:50%;
-    background:linear-gradient(135deg,var(--a1),var(--a2));
-    box-shadow:0 0 16px rgba(124,92,255,.8)}
-  h1{font-size:19px;margin:0;letter-spacing:-.2px;font-weight:650}
-  .tag{color:var(--dim);font-size:13px;margin-top:5px}
-  h2{font-size:11.5px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);font-weight:600}
-  .lede{color:var(--dim);font-size:13.5px;margin:8px 0 0}
-  .hint{color:var(--faint);font-size:12.2px;line-height:1.55;margin-top:7px}
-  .dim{color:var(--dim)} .ok-t{color:var(--ok)} .err-t{color:var(--err)} .warn-t{color:var(--warn)}
+  /* thumbnails row */
+  .thumbs{display:flex;gap:7px;align-items:center}
+  .thumb{width:38px;height:38px;border-radius:11px;object-fit:cover;background:var(--line);
+    border:1px solid var(--line);flex:none}
+  .thumb.big{width:64px;height:64px;border-radius:16px}
+  .thumb.ph{display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--mute)}
 
-  /* ── status strip ──────────────────────────────────────────────────── */
-  .strip{display:flex;gap:9px;flex-wrap:wrap;padding:12px 14px;margin-bottom:14px}
-  .stat{display:flex;flex-direction:column;gap:2px;padding:6px 13px;border-radius:var(--rs);
-    background:var(--glass-hi);border:1px solid var(--stroke);min-width:92px}
-  .stat .k{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
-  .stat .v{font-size:14px;font-weight:640}
+  /* big stat */
+  .big{font-size:56px;font-weight:800;letter-spacing:-.05em;line-height:.95}
+  .big .sm{font-size:22px;font-weight:700;color:var(--mute);letter-spacing:-.02em}
 
-  /* ── buttons ───────────────────────────────────────────────────────── */
-  button{
-    position:relative;overflow:hidden;border:1px solid var(--stroke);
-    background:var(--glass-hi); color:var(--fg); cursor:pointer;
-    padding:11px 20px;border-radius:var(--rs);font-size:13.5px;font-weight:600;
-    font-family:inherit; transition:transform .16s, box-shadow .22s, border-color .22s, opacity .2s;
-  }
-  button::after{
-    content:'';position:absolute;top:0;left:0;width:100%;height:100%;
-    background:linear-gradient(115deg,transparent 32%,rgba(255,255,255,.5) 50%,transparent 68%);
-    transform:translateX(-130%); transition:transform .62s cubic-bezier(.2,.7,.3,1); pointer-events:none;
-  }
-  button:hover:not(:disabled)::after{transform:translateX(130%)}
-  button:hover:not(:disabled){transform:translateY(-1px);border-color:rgba(255,255,255,.24)}
+  /* list rows */
+  .row{display:flex;align-items:center;gap:13px;padding:13px 15px;border-radius:var(--rs);
+    background:var(--bg);margin-bottom:8px;transition:transform .12s}
+  .row:last-child{margin-bottom:0}
+  .row.sel{background:var(--pill);color:var(--pill-ink)}
+  .row.sel .k,.row.sel .mute{color:rgba(255,255,255,.62)}
+  @media (prefers-color-scheme:dark){ .row.sel .k,.row.sel .mute{color:rgba(0,0,0,.55)} }
+  .row .grow{flex:1;min-width:0}
+  .k{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+  .v{font-size:16px;font-weight:700;letter-spacing:-.02em;margin-top:1px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .r-right{text-align:right;flex:none}
+
+  /* buttons */
+  button{font-family:inherit;font-size:14px;font-weight:650;letter-spacing:-.01em;cursor:pointer;
+    border:1px solid var(--line);background:var(--card);color:var(--ink);
+    padding:13px 22px;border-radius:99px;transition:transform .13s,opacity .2s,background .2s}
+  button:hover:not(:disabled){transform:translateY(-1px)}
   button:active:not(:disabled){transform:translateY(0)}
-  button:disabled{opacity:.42;cursor:not-allowed}
-  button:disabled::after{display:none}
-  .primary{background:linear-gradient(135deg,var(--a1),var(--a2));border-color:transparent;color:#fff;
-    box-shadow:0 6px 20px rgba(124,92,255,.36)}
-  .primary:hover:not(:disabled){box-shadow:0 10px 28px rgba(124,92,255,.5)}
-  .go{background:linear-gradient(135deg,#18c98a,#22d3ee);border-color:transparent;color:#03231a;
-    box-shadow:0 6px 20px rgba(52,229,160,.34)}
-  .stopbtn{background:linear-gradient(135deg,#ff5f7a,#ff9166);border-color:transparent;color:#fff;
-    box-shadow:0 6px 20px rgba(255,107,129,.36)}
-  .xl{padding:14px 28px;font-size:15px;border-radius:13px}
-  .ghost{background:transparent}
-  .linkish{background:none;border:none;color:var(--a2);padding:0;font-size:12.5px;box-shadow:none}
-  .linkish::after{display:none}
-  .linkish:hover{transform:none;text-decoration:underline}
-  .actions{display:flex;gap:11px;flex-wrap:wrap;align-items:center;margin-top:17px}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .solid{background:var(--pill);color:var(--pill-ink);border-color:transparent}
+  .danger{background:var(--err);color:#fff;border-color:transparent}
+  .xl{padding:16px 30px;font-size:15.5px}
+  .link{background:none;border:none;padding:0;font-size:13px;color:var(--ink);
+    text-decoration:underline;text-underline-offset:3px;border-radius:0}
+  .acts{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px}
 
-  /* ── inputs ────────────────────────────────────────────────────────── */
-  label{display:block;font-size:12px;color:var(--dim);margin-bottom:7px;font-weight:500}
-  input,textarea{
-    width:100%;padding:12px 14px;border-radius:var(--rs);color:var(--fg);
-    background:rgba(0,0,0,.20);border:1px solid var(--stroke);font-size:13.5px;
-    font-family:inherit;transition:border-color .2s, box-shadow .2s;
-  }
-  @media (prefers-color-scheme: light){ input,textarea{background:rgba(255,255,255,.8)} }
-  input:focus,textarea:focus{outline:none;border-color:rgba(124,92,255,.75);
-    box-shadow:0 0 0 3px rgba(124,92,255,.16)}
-  input.big{font-size:15.5px;padding:15px 16px}
-  textarea{min-height:60px;resize:vertical;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
-  input[type=checkbox]{width:auto;accent-color:var(--a1)}
-  .qty{width:112px;flex:none}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:18px;margin-top:14px}
-  .field{padding-top:14px;border-top:1px solid var(--stroke)}
-  .field .name{font-size:13.5px;font-weight:620}
-  .field input{margin-top:8px}
-  .def{font-size:11px;color:var(--faint);margin-top:6px}
-  .inline{display:flex;align-items:center;gap:9px;margin:0}
+  /* inputs */
+  label{display:block;font-size:11px;font-weight:700;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+  input,textarea{width:100%;padding:14px 16px;border-radius:var(--rs);border:1px solid var(--line);
+    background:var(--bg);color:var(--ink);font-family:inherit;font-size:15px;font-weight:550;
+    letter-spacing:-.01em;transition:border-color .18s}
+  input:focus,textarea:focus{outline:none;border-color:var(--ink)}
+  textarea{min-height:58px;resize:vertical;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:400}
+  input[type=checkbox]{width:auto;accent-color:var(--pill)}
+  .qty{width:96px;flex:none;text-align:center}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px}
 
-  /* ── messages, pills, tables ───────────────────────────────────────── */
-  .msg{padding:12px 14px;border-radius:var(--rs);font-size:13px;margin:11px 0;
-    border:1px solid;background:rgba(255,255,255,.04)}
-  .msg.ok{color:var(--ok);border-color:rgba(52,229,160,.42)}
-  .msg.err{color:var(--err);border-color:rgba(255,107,129,.42)}
-  .msg.warn{color:var(--warn);border-color:rgba(255,180,84,.42)}
-  .msg.info{color:var(--dim);border-color:var(--stroke)}
+  /* messages */
+  .msg{padding:13px 16px;border-radius:var(--rs);font-size:13.5px;margin:12px 0;background:var(--bg)}
+  .msg.ok{color:var(--ok)} .msg.err{color:var(--err)} .msg.warn{color:var(--warn)}
 
-  .mode{display:flex;align-items:center;gap:12px;padding:13px 16px;border-radius:var(--r);
-    margin-bottom:14px;border:1px solid;font-size:13.3px}
-  .mode.live{border-color:rgba(255,107,129,.5);background:linear-gradient(90deg,rgba(255,107,129,.13),transparent)}
-  .mode.practice{border-color:rgba(255,180,84,.5);background:linear-gradient(90deg,rgba(255,180,84,.12),transparent)}
-  .mode .sp{margin-left:auto}
+  .meter{height:6px;border-radius:99px;background:var(--line);overflow:hidden;margin:11px 0 6px}
+  .meter>div{height:100%;border-radius:99px;background:var(--pill);transition:width .5s cubic-bezier(.2,.7,.3,1)}
 
-  .pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:10.6px;
-    font-weight:700;letter-spacing:.04em;text-transform:uppercase}
-  .p-live{background:rgba(52,229,160,.16);color:var(--ok);box-shadow:0 0 12px rgba(52,229,160,.22)}
-  .p-slow{background:rgba(255,180,84,.16);color:var(--warn)}
-  .p-quiet{background:rgba(152,161,189,.14);color:var(--dim)}
-  .p-buy{background:linear-gradient(135deg,var(--a1),var(--a2));color:#fff;box-shadow:0 0 14px rgba(124,92,255,.45)}
-  .p-skip{background:rgba(152,161,189,.13);color:var(--faint)}
+  .chip{display:inline-block;padding:4px 11px;border-radius:99px;font-size:10.5px;
+    font-weight:750;letter-spacing:.05em;text-transform:uppercase;background:var(--bg);color:var(--mute)}
+  .chip.live{background:var(--pill);color:var(--pill-ink)}
+  .chip.buy{background:var(--ok);color:#fff}
+  .chip.skip{background:var(--bg);color:var(--mute)}
 
-  .kv{display:flex;justify-content:space-between;gap:16px;padding:9px 0;
-    border-bottom:1px solid var(--stroke);font-size:13.2px}
-  .kv:last-child{border-bottom:none} .kv>span:first-child{color:var(--dim)}
-  .meter{height:7px;border-radius:99px;background:rgba(0,0,0,.28);overflow:hidden;margin:10px 0 5px}
-  .meter>div{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--a1),var(--a2));
-    transition:width .5s cubic-bezier(.2,.7,.3,1)}
-
-  .tablewrap{overflow-x:auto;border:1px solid var(--stroke);border-radius:var(--rs);margin-top:14px}
-  table{border-collapse:collapse;width:100%;font-size:12.6px}
-  th,td{text-align:right;padding:10px 13px;border-bottom:1px solid var(--stroke);white-space:nowrap}
-  th:first-child,td:first-child{text-align:left}
-  tbody tr:last-child td{border-bottom:none}
-  tbody tr:hover{background:rgba(255,255,255,.045)}
-  th{color:var(--faint);font-weight:600;font-size:10.6px;text-transform:uppercase;letter-spacing:.07em}
-  a{color:var(--a2);text-decoration:none} a:hover{text-decoration:underline}
-
-  details{margin-top:14px;border-top:1px solid var(--stroke);padding-top:13px}
-  details.bare{border:none;padding-top:6px;margin-top:8px}
-  summary{cursor:pointer;color:var(--dim);font-size:12.5px;font-weight:550;list-style:none}
+  details{margin-top:14px}
+  summary{cursor:pointer;font-size:13px;font-weight:650;color:var(--mute);list-style:none}
   summary::-webkit-details-marker{display:none}
-  summary::before{content:'▸ ';color:var(--a2);transition:transform .2s;display:inline-block}
-  details[open]>summary::before{content:'▾ '}
-  .chk{display:grid;grid-template-columns:16px 1fr;gap:9px;padding:6px 0;font-size:12.2px}
-  .chk .why{grid-column:2;color:var(--faint);font-size:11.4px;margin-top:2px}
+  summary::after{content:' ›';font-weight:800}
+  details[open]>summary::after{content:' ⌄'}
+  .chk{display:grid;grid-template-columns:15px 1fr;gap:9px;padding:7px 0;font-size:12.5px}
+  .chk .why{grid-column:2;color:var(--mute);font-size:11.5px;margin-top:2px}
 
-  .log{max-height:200px;overflow-y:auto;font-size:12.2px;margin-top:13px;
-    font-family:ui-monospace,Menlo,monospace}
-  .log div{padding:5px 0;border-bottom:1px solid var(--stroke)}
+  .log{margin-top:12px;font-family:ui-monospace,Menlo,monospace;font-size:12px;
+    max-height:160px;overflow-y:auto}
+  .log div{padding:6px 0;border-bottom:1px solid var(--line);color:var(--mute)}
   .log div:last-child{border-bottom:none}
 
   .spin{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px;
-    border:2px solid rgba(255,255,255,.22);border-top-color:var(--a2);animation:sp .7s linear infinite}
+    border:2px solid var(--line);border-top-color:var(--ink);animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
-  footer{color:var(--faint);font-size:12px;margin-top:26px;text-align:center}
+  footer{text-align:center;color:var(--mute);font-size:12px;margin-top:22px}
 </style>
 </head>
 <body>
 <div class="shell">
 
-  <header>
-    <div class="brand"><span class="dot"></span><h1>NFTmint</h1></div>
-    <div class="tag">Robinhood Chain · mints are won by arriving first, not by paying more</div>
-  </header>
-
-  <div class="strip glass" id="strip"><span class="dim">connecting…</span></div>
-  <div id="modebar"></div>
-  <div id="alert"></div>
-
-  <!-- AUTO-HUNT -->
-  <section class="glass card">
-    <h2>Auto-hunt</h2>
-    <p class="lede">
-      Watches live minting on the chain, judges every collection against the rules,
-      and buys the ones that pass — from every wallet that has gas.
-    </p>
-    <p class="hint">
-      <b>Nothing to configure to start.</b> The rules below already hold sensible
-      defaults for catching fast-selling free mints. Each round listens for about
-      35 seconds, then decides. It keeps going while this tab is open.
-    </p>
-
-    <div class="actions">
-      <button class="go xl" id="btnHunt" onclick="toggleHunt()">Start hunting</button>
-      <button class="ghost" id="btnOnce" onclick="huntOnce()">Run one round</button>
-      <span id="huntState" class="dim" style="font-size:12.4px"></span>
-    </div>
-
-    <div id="huntOut"></div>
-    <div class="log" id="log"><span class="dim">No rounds yet.</span></div>
-
-    <details id="rules">
-      <summary>Adjust the rules — what counts as worth buying</summary>
-      <p class="hint">
-        Every rule must pass before it buys. Changes save in this browser and apply
-        next round. <b>Money limits are not here</b> — the spend cap and price ceiling
-        live on the server so a browser can never widen them.
-      </p>
-      <div class="grid" id="rulesForm"></div>
-      <div class="actions">
-        <button class="ghost" onclick="resetRules()">Reset to defaults</button>
-        <span id="rulesState" class="dim" style="font-size:12.4px"></span>
+  <div class="card">
+    <div class="head">
+      <div>
+        <h1>NFTmint</h1>
+        <div class="lede">Robinhood Chain</div>
       </div>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+    <div id="stats"><span class="mute">connecting…</span></div>
+    <div id="alert"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Auto-hunt</div>
+    <h2>Find &amp; buy automatically</h2>
+    <p class="lede">Watches live minting, judges every collection, and buys the ones that
+      pass — from every wallet with gas.</p>
+    <div class="acts">
+      <button class="solid xl" id="btnHunt" onclick="toggleHunt()">Start hunting</button>
+      <button id="btnOnce" onclick="huntOnce()">One round</button>
+      <span id="huntState" class="mute" style="font-size:12.5px"></span>
+    </div>
+    <div id="huntOut"></div>
+    <div class="log" id="log"><div>No rounds yet.</div></div>
+    <details id="rules">
+      <summary>Adjust the rules</summary>
+      <p class="hint">Every rule must pass before it buys. Saved in this browser, applied next
+        round. Spend limits live on the server and cannot be changed from here.</p>
+      <div class="grid" id="rulesForm" style="margin-top:14px"></div>
+      <div class="acts"><button onclick="resetRules()">Reset to defaults</button>
+        <span id="rulesState" class="mute" style="font-size:12.5px"></span></div>
     </details>
-  </section>
+  </div>
 
-  <!-- MANUAL -->
-  <section class="glass card">
+  <div class="card">
+    <div class="eyebrow">Manual</div>
     <h2>Mint one yourself</h2>
-    <p class="lede">
-      Paste a contract address or any link containing one. It reads the contract —
-      price, supply left, whether the sale is open — and works out the mint call for you.
-    </p>
-
-    <div style="margin-top:15px">
+    <p class="lede">Paste a contract or link. It reads the price, supply and mint call for you.</p>
+    <div style="margin-top:16px">
       <label for="target">Contract address or link</label>
-      <input id="target" class="big" spellcheck="false" placeholder="0x…">
+      <input id="target" spellcheck="false" placeholder="0x…">
     </div>
-
-    <div class="actions">
-      <input id="qty" class="qty" type="number" min="1" value="1" title="How many">
-      <button class="primary" id="btnCheck" onclick="doPlan()">Check it</button>
-      <button class="primary xl" id="btnMint" onclick="doMint()" disabled>Mint</button>
-      <span id="mintState" class="dim" style="font-size:12.4px"></span>
+    <div class="acts">
+      <input id="qty" class="qty" type="number" min="1" value="1">
+      <button class="solid" id="btnCheck" onclick="doPlan()">Check</button>
+      <button class="solid xl" id="btnMint" onclick="doMint()" disabled>Mint</button>
+      <span id="mintState" class="mute" style="font-size:12.5px"></span>
     </div>
-    <div class="hint"><b>Check it</b> only reads — it never spends. Mint unlocks once a working call is found.</div>
-
+    <div class="hint">Check only reads — it never spends.</div>
     <div id="planOut"></div>
     <div id="mintOut"></div>
-
     <details id="advanced">
-      <summary>Advanced — set the mint call by hand</summary>
-      <p class="hint">
-        Only needed if the automatic check cannot work a contract out. Open a successful
-        mint for it on the explorer, find <b>Input Data</b>, and paste the hex here.
-      </p>
+      <summary>Advanced — set the call by hand</summary>
+      <p class="hint">Only if the automatic check cannot work a contract out. Copy Input Data
+        from a successful mint on the explorer.</p>
       <div style="margin-top:12px"><label for="calldata">Raw calldata</label>
         <textarea id="calldata" spellcheck="false" placeholder="0x…"></textarea></div>
-      <div style="margin-top:12px"><label for="fn">…or function signature</label>
+      <div style="margin-top:12px"><label for="fn">Or function signature</label>
         <input id="fn" spellcheck="false" placeholder="mint(uint256)"></div>
-      <div style="margin-top:12px"><label for="args">Arguments — comma separated, $SENDER = your address</label>
+      <div style="margin-top:12px"><label for="args">Arguments</label>
         <input id="args" spellcheck="false" placeholder="1"></div>
-      <div style="margin-top:12px"><label for="price">Price per token (ETH)</label>
+      <div style="margin-top:12px"><label for="price">Price each (ETH)</label>
         <input id="price" inputmode="decimal" placeholder="0"></div>
     </details>
-  </section>
+  </div>
 
-  <!-- SETUP -->
-  <details class="glass card" id="setup">
-    <summary style="font-size:13.5px;font-weight:620">Setup — access token &amp; deployment</summary>
-    <p class="hint">
-      Minting spends real money, so the server refuses to act without a token. Set
-      <code>API_TOKEN</code> in your Vercel environment variables and paste the same
-      value here. It stays in this browser.
-    </p>
-    <div style="margin-top:13px">
-      <label for="token">API_TOKEN</label>
-      <input id="token" type="password" autocomplete="off" placeholder="paste your token">
-    </div>
-    <div class="actions">
-      <button class="primary" onclick="saveToken()">Save</button>
-      <button class="ghost" onclick="clearToken()">Clear</button>
-      <span id="tokenState" class="dim" style="font-size:12.4px"></span>
+  <details class="card" id="setup">
+    <summary style="font-size:14px;color:var(--ink)">Setup — access token</summary>
+    <p class="hint">Set <code>API_TOKEN</code> in your Vercel environment variables and paste
+      the same value here. It stays in this browser.</p>
+    <div style="margin-top:14px"><label for="token">API token</label>
+      <input id="token" type="password" autocomplete="off" placeholder="paste token"></div>
+    <div class="acts">
+      <button class="solid" onclick="saveToken()">Save</button>
+      <button onclick="clearToken()">Clear</button>
+      <span id="tokenState" class="mute" style="font-size:12.5px"></span>
     </div>
     <div id="deployOut" style="margin-top:16px"></div>
   </details>
 
-  <footer>
-    Burner wallets only · spending capped by <code>MAX_MINT_VALUE_ETH</code>
-    <span id="build"></span>
-  </footer>
+  <footer>Burner wallets only · capped by <code>MAX_MINT_VALUE_ETH</code><span id="build"></span></footer>
 </div>
 
 <script>
 'use strict';
-
-// Page build identity. Must equal UI_VERSION in src/version.ts — a mismatch
-// means this HTML came from a cache and is not the live interface.
-var PAGE_VERSION = '5-glass';
-
-var hunting = false, plan = null, rounds = 0, serverDry = false, defaults = null, planTimer = null;
+var PAGE_VERSION = '6-minimal';
+var hunting=false, plan=null, rounds=0, serverDry=false, defaults=null, planTimer=null, seenArt=[];
 
 function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s===null||s===undefined?'':s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function msg(k,t){ return '<div class="msg '+k+'">'+t+'</div>'; }
+function shortAddr(a){ return a? a.slice(0,6)+'…'+a.slice(-4) : ''; }
+function fmtDur(s){ if(!isFinite(s))return'—';
+  return s<60?Math.round(s)+'s':s<3600?Math.round(s/60)+'m':(s/3600).toFixed(1)+'h'; }
 
-function esc(s){
-  return String(s === null || s === undefined ? '' : s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-function msg(kind, text){ return '<div class="msg ' + kind + '">' + text + '</div>'; }
-function kv(label, valueHtml, cls){
-  return '<div class="kv"><span>' + esc(label) + '</span><span class="' + (cls || '') + '">' +
-         valueHtml + '</span></div>';
-}
-function shortAddr(a){ return a ? a.slice(0,8) + '…' + a.slice(-4) : ''; }
-function fmtDur(s){
-  if (!isFinite(s)) return '—';
-  if (s < 60) return Math.round(s) + 's';
-  if (s < 3600) return Math.round(s/60) + 'm';
-  return (s/3600).toFixed(1) + 'h';
-}
-
-/* ── token ─────────────────────────────────────────────────────────────── */
-function tok(){ return localStorage.getItem('nftmint_token') || ''; }
-function saveToken(){
-  localStorage.setItem('nftmint_token', $('token').value.trim());
-  renderTok();
-  boot();
-}
-function clearToken(){
-  localStorage.removeItem('nftmint_token');
-  $('token').value = '';
-  renderTok();
-}
-function renderTok(){
-  var t = tok();
-  $('tokenState').textContent = t ? 'saved (' + t.length + ' characters)' : 'not set';
-  $('tokenState').className = t ? 'ok-t' : 'err-t';
+/* row helper: small label above a bold value */
+function row(label, value, opts){
+  opts = opts || {};
+  var art = opts.img
+    ? '<img class="thumb" src="'+esc(opts.img)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
+    : '';
+  var right = opts.right ? '<div class="r-right"><div class="k">'+esc(opts.rightLabel||'')+'</div>'+
+      '<div class="v">'+opts.right+'</div></div>' : '';
+  return '<div class="row '+(opts.sel?'sel':'')+'">'+art+
+    '<div class="grow"><div class="k">'+esc(label)+'</div><div class="v">'+value+'</div></div>'+
+    right+'</div>';
 }
 
-/* ── rules ─────────────────────────────────────────────────────────────── */
-var RULES = [
-  { key:'minMintsPerMinute', label:'Minimum mint speed', unit:'per minute',
-    why:'How fast people are minting it. Something selling out moves quickly.' },
-  { key:'minUniqueMinters', label:'Minimum different wallets', unit:'wallets',
-    why:'The anti-bot check, and the most useful dial here. 300 mints from 4 wallets is one bot; 300 from 150 people is real demand.' },
-  { key:'minAttemptsInWindow', label:'Minimum mints in the window', unit:'mints',
-    why:'Enough activity in the last few seconds to be a real rush, not a trickle.' },
-  { key:'maxAgeSec', label:'Only drops newer than', unit:'seconds',
-    why:'Joining a mint late usually means the supply is already gone.' },
-  { key:'maxSelloutSec', label:'Must sell out within', unit:'seconds',
-    why:'Supply left divided by current speed. The real test — minting fast against unlimited supply is not scarcity.' },
-  { key:'maxSupplyProgressPct', label:'Skip if more than', unit:'% already minted',
-    why:'Past this you will probably lose the race and pay gas for nothing.' }
+/* ── token ── */
+function tok(){ return localStorage.getItem('nftmint_token')||''; }
+function saveToken(){ localStorage.setItem('nftmint_token',$('token').value.trim()); renderTok(); boot(); }
+function clearToken(){ localStorage.removeItem('nftmint_token'); $('token').value=''; renderTok(); }
+function renderTok(){ var t=tok();
+  $('tokenState').textContent = t? 'saved ('+t.length+' chars)' : 'not set';
+  $('tokenState').className = t? 'ok' : 'bad'; }
+
+/* ── rules ── */
+var RULES=[
+ {key:'minMintsPerMinute',label:'Min mint speed',unit:'per minute',
+  why:'How fast people are minting it. Something selling out moves quickly.'},
+ {key:'minUniqueMinters',label:'Min different wallets',unit:'wallets',
+  why:'The anti-bot check, and the most useful dial. 300 mints from 4 wallets is one bot; 300 from 150 is real demand.'},
+ {key:'minAttemptsInWindow',label:'Min mints in window',unit:'mints',
+  why:'Enough activity to be a real rush, not a trickle.'},
+ {key:'maxAgeSec',label:'Only newer than',unit:'seconds',
+  why:'Joining late usually means the supply is gone.'},
+ {key:'maxSelloutSec',label:'Must sell out within',unit:'seconds',
+  why:'Supply left ÷ current speed. Minting fast against unlimited supply is not scarcity.'},
+ {key:'maxSupplyProgressPct',label:'Skip if more than',unit:'% minted',
+  why:'Past this you will likely lose the race and pay gas for nothing.'}
 ];
-var FLAGS = [
-  { key:'freeOnly', label:'Only buy free mints',
-    why:'Recommended. Worst case is the gas. Turning this off does not let it spend freely — paid mints still need a price ceiling set on the server.' },
-  { key:'requireLive', label:'Must still be minting now',
-    why:'A gap means it already finished and the numbers are history.' },
-  { key:'requireSaleOpen', label:'Respect the sale switch',
-    why:'If the contract says whether its sale is open, believe it.' },
-  { key:'skipIfOwned', label:'Skip ones you already own',
-    why:'Checked on chain. Stops repeated rounds rebuying the same collection.' }
+var FLAGS=[
+ {key:'freeOnly',label:'Only free mints',
+  why:'Recommended — worst case is the gas. Turning this off still needs a server price ceiling.'},
+ {key:'requireLive',label:'Must still be minting',
+  why:'A gap means it already finished.'},
+ {key:'requireSaleOpen',label:'Respect the sale switch',
+  why:'If the contract says its sale is open, believe it.'},
+ {key:'skipIfOwned',label:'Skip ones you own',
+  why:'Checked on chain. Stops repeat rounds rebuying.'}
 ];
-
-function rules(){
-  try { return JSON.parse(localStorage.getItem('nftmint_rules') || '{}'); }
-  catch (e) { return {}; }
-}
-function setRule(key, value){
-  var r = rules();
-  if (value === '' || value === null || value === undefined) delete r[key];
-  else r[key] = String(value);
-  localStorage.setItem('nftmint_rules', JSON.stringify(r));
-  $('rulesState').textContent = 'saved — applies next round';
-  renderRules();
-}
-function resetRules(){
-  localStorage.removeItem('nftmint_rules');
-  $('rulesState').textContent = 'back to defaults';
-  renderRules();
-}
+function rules(){ try{ return JSON.parse(localStorage.getItem('nftmint_rules')||'{}'); }catch(e){ return {}; } }
+function setRule(k,v){ var r=rules();
+  if(v===''||v===null||v===undefined) delete r[k]; else r[k]=String(v);
+  localStorage.setItem('nftmint_rules',JSON.stringify(r));
+  $('rulesState').textContent='saved'; renderRules(); }
+function resetRules(){ localStorage.removeItem('nftmint_rules');
+  $('rulesState').textContent='back to defaults'; renderRules(); }
 function renderRules(){
-  var cur = rules(), out = [];
-  for (var i = 0; i < RULES.length; i++) {
-    var r = RULES[i];
-    var custom = cur[r.key] !== undefined;
-    var val = custom ? cur[r.key] : (defaults ? defaults[r.key] : '');
-    var note = custom
-      ? 'changed — default is ' + esc(defaults ? defaults[r.key] : '?')
-      : 'using the default';
-    out.push(
-      '<div class="field">' +
-        '<div class="name">' + esc(r.label) + ' <span class="dim" style="font-weight:400">' + esc(r.unit) + '</span></div>' +
-        '<div class="hint">' + esc(r.why) + '</div>' +
-        '<input type="number" value="' + esc(val) + '" oninput="setRule(\'' + r.key + '\',this.value)">' +
-        '<div class="def">' + note + '</div>' +
-      '</div>'
-    );
+  var cur=rules(), out=[];
+  for(var i=0;i<RULES.length;i++){
+    var r=RULES[i], custom=cur[r.key]!==undefined;
+    var val=custom?cur[r.key]:(defaults?defaults[r.key]:'');
+    out.push('<div><label>'+esc(r.label)+' <span class="mute">'+esc(r.unit)+'</span></label>'+
+      '<input type="number" value="'+esc(val)+'" oninput="setRule(\''+r.key+'\',this.value)">'+
+      '<div class="hint">'+esc(r.why)+'</div>'+
+      '<div class="hint">'+(custom?'changed — default '+esc(defaults?defaults[r.key]:'?'):'default')+'</div></div>');
   }
-  for (var j = 0; j < FLAGS.length; j++) {
-    var f = FLAGS[j];
-    var isCustom = cur[f.key] !== undefined;
-    var on = isCustom ? cur[f.key] === 'true' : (defaults ? Boolean(defaults[f.key]) : true);
-    var dnote = isCustom
-      ? 'changed — default is ' + (defaults && defaults[f.key] ? 'on' : 'off')
-      : 'using the default';
-    out.push(
-      '<div class="field">' +
-        '<label class="inline"><input type="checkbox" ' + (on ? 'checked' : '') +
-          ' onchange="setRule(\'' + f.key + '\',this.checked)">' +
-          '<span class="name">' + esc(f.label) + '</span></label>' +
-        '<div class="hint">' + esc(f.why) + '</div>' +
-        '<div class="def">' + dnote + '</div>' +
-      '</div>'
-    );
+  for(var j=0;j<FLAGS.length;j++){
+    var f=FLAGS[j], isC=cur[f.key]!==undefined;
+    var on=isC?cur[f.key]==='true':(defaults?Boolean(defaults[f.key]):true);
+    out.push('<div><label style="display:flex;gap:9px;align-items:center;text-transform:none;'+
+      'font-size:14px;letter-spacing:-.01em;color:var(--ink)">'+
+      '<input type="checkbox" '+(on?'checked':'')+' onchange="setRule(\''+f.key+'\',this.checked)">'+
+      esc(f.label)+'</label><div class="hint">'+esc(f.why)+'</div>'+
+      '<div class="hint">'+(isC?'changed':'default')+'</div></div>');
   }
-  $('rulesForm').innerHTML = out.join('');
+  $('rulesForm').innerHTML=out.join('');
 }
 
-/* ── api ───────────────────────────────────────────────────────────────── */
-async function api(path, options){
-  options = options || {};
-  var headers = { 'content-type': 'application/json' };
-  var t = tok();
-  if (t) headers.authorization = 'Bearer ' + t;
-  var res = await fetch(path, { method: options.method || 'GET', body: options.body, headers: headers });
-  var text = await res.text();
-  var body;
-  try { body = JSON.parse(text); }
-  catch (e) { throw new Error('Server returned a non-JSON response (HTTP ' + res.status + ')'); }
-  if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
-  return body;
-}
-function busy(btnId, stateId, on, label){
-  $(btnId).disabled = on;
-  $(stateId).innerHTML = on ? '<span class="spin"></span> ' + esc(label) : '';
-}
-function log(text, cls){
-  var el = $('log');
-  if (el.querySelector('.dim')) el.innerHTML = '';
-  var d = document.createElement('div');
-  if (cls) d.className = cls;
-  d.textContent = new Date().toLocaleTimeString() + '  ' + text;
-  el.insertBefore(d, el.firstChild);
-  while (el.children.length > 60) el.removeChild(el.lastChild);
-}
+/* ── api ── */
+async function api(path,opt){ opt=opt||{};
+  var h={'content-type':'application/json'}, t=tok();
+  if(t) h.authorization='Bearer '+t;
+  var res=await fetch(path,{method:opt.method||'GET',body:opt.body,headers:h});
+  var txt=await res.text(), body;
+  try{ body=JSON.parse(txt); }catch(e){ throw new Error('Server error (HTTP '+res.status+')'); }
+  if(!res.ok) throw new Error(body.error||('HTTP '+res.status));
+  return body; }
+function busy(b,s,on,label){ $(b).disabled=on;
+  $(s).innerHTML = on? '<span class="spin"></span> '+esc(label) : ''; }
+function log(t,cls){ var el=$('log');
+  if(el.children.length===1 && el.textContent.indexOf('No rounds')>=0) el.innerHTML='';
+  var d=document.createElement('div'); if(cls)d.className=cls;
+  d.textContent=new Date().toLocaleTimeString()+'  '+t;
+  el.insertBefore(d,el.firstChild);
+  while(el.children.length>40) el.removeChild(el.lastChild); }
 
-/* ── mode ──────────────────────────────────────────────────────────────── */
-function isPractice(){ return localStorage.getItem('nftmint_practice') === '1' || serverDry; }
-function setPractice(on){ localStorage.setItem('nftmint_practice', on ? '1' : '0'); renderMode(); }
-function renderMode(){
-  var html;
-  if (isPractice()) {
-    var locked = serverDry ? ' Locked on by the server (<code>HUNT_DRY_RUN=true</code>).' : '';
-    var sw = serverDry ? '' : '<span class="sp"><button class="linkish" onclick="setPractice(false)">Switch to live buying →</button></span>';
-    html = '<div class="mode practice"><b>Practice mode</b> — everything except actually buying.' + locked + sw + '</div>';
-  } else {
-    html = '<div class="mode live"><b>Live — real money.</b> It will buy with your wallets, up to the server spend cap.' +
-           '<span class="sp"><button class="linkish" onclick="setPractice(true)">Switch to practice →</button></span></div>';
-  }
-  $('modebar').innerHTML = html;
-}
+/* remember artwork seen, shown as the thumbnail row */
+function noteArt(url){
+  if(!url || seenArt.indexOf(url)>=0) return;
+  seenArt.unshift(url); seenArt=seenArt.slice(0,5); renderThumbs(); }
+function renderThumbs(){
+  if(!seenArt.length){ $('thumbs').innerHTML=''; return; }
+  var out=[];
+  for(var i=0;i<seenArt.length;i++)
+    out.push('<img class="thumb" src="'+esc(seenArt[i])+'" alt="" loading="lazy" '+
+      'onerror="this.style.display=\'none\'">');
+  $('thumbs').innerHTML=out.join(''); }
 
-/* ── boot / status ─────────────────────────────────────────────────────── */
+/* ── mode ── */
+function isPractice(){ return localStorage.getItem('nftmint_practice')==='1'||serverDry; }
+function setPractice(on){ localStorage.setItem('nftmint_practice',on?'1':'0'); boot(); }
+
+/* ── boot ── */
 async function boot(){
-  try {
-    var h = await api('/api/health');
-    var rows = [], keys = Object.keys(h.configured);
-    for (var i = 0; i < keys.length; i++) {
-      var k = keys[i], v = h.configured[k];
-      var normal = k === 'upstreamTracker';
-      var cls = normal ? 'dim' : (typeof v === 'boolean' ? (v ? 'ok-t' : 'err-t') : '');
-      var suffix = (normal && v === false) ? ' (normal)' : '';
-      rows.push(kv(k, esc(String(v)) + suffix, cls));
+  try{
+    var h=await api('/api/health'), rows=[], keys=Object.keys(h.configured);
+    for(var i=0;i<keys.length;i++){
+      var k=keys[i], v=h.configured[k];
+      rows.push(row(k,esc(String(v))));
     }
-    $('deployOut').innerHTML = rows.join('');
-    $('alert').innerHTML = h.problems.length ? msg('warn', esc(h.problems.join(' · '))) : '';
-    if (!h.configured.apiToken || !tok()) $('setup').open = true;
-
-    if (h.build) {
-      var stale = h.build.uiVersion !== PAGE_VERSION;
-      var note = stale
-        ? ' <span class="err-t">— this page is cached. Hard-refresh (Ctrl/Cmd+Shift+R).</span>'
-        : '';
-      $('build').innerHTML = ' · build ' + esc(h.build.commit) + note;
+    $('deployOut').innerHTML=rows.join('');
+    $('alert').innerHTML = h.problems.length? msg('warn',esc(h.problems.join(' · '))) : '';
+    if(!h.configured.apiToken||!tok()) $('setup').open=true;
+    if(h.build){
+      var stale=h.build.uiVersion!==PAGE_VERSION;
+      $('build').innerHTML=' · build '+esc(h.build.commit)+
+        (stale?' <span class="bad">— cached page, hard-refresh</span>':'');
     }
-  } catch (e) {
-    $('alert').innerHTML = msg('err', esc(e.message));
-  }
+  }catch(e){ $('alert').innerHTML=msg('err',esc(e.message)); }
 
-  renderMode();
+  if(!tok()){ $('stats').innerHTML=row('status','<span class="bad">add your token below</span>'); return; }
 
-  if (!tok()) {
-    $('strip').innerHTML = '<span class="err-t">Add your access token in Setup below to begin.</span>';
-    renderRules();
-    return;
-  }
-
-  try {
-    var s = await api('/api/status');
-    defaults = s.criteria;
-    renderRules();
-
-    var total = 0, funded = 0;
-    for (var w = 0; w < s.wallets.length; w++) {
-      var bal = Number(s.wallets[w].balanceEth);
-      total += bal;
-      if (bal > 0) funded++;
+  try{
+    var s=await api('/api/status');
+    defaults=s.criteria; renderRules();
+    var total=0, funded=0;
+    for(var w=0;w<s.wallets.length;w++){
+      var b=Number(s.wallets[w].balanceEth); total+=b; if(b>0) funded++;
     }
-    var rtt = null;
-    for (var e2 = 0; e2 < s.rpcEndpoints.length; e2++) {
-      if (s.rpcEndpoints[e2].medianRttMs !== undefined) { rtt = s.rpcEndpoints[e2].medianRttMs; break; }
-    }
-    var wrong = s.observedChainId && s.observedChainId !== s.chainId;
+    var practice=isPractice();
+    var modeBtn='<button class="link" onclick="setPractice('+(practice?'false':'true')+')">'+
+      (practice?'go live':'practice')+'</button>';
 
-    var stats = [];
-    stats.push(stat('network', esc(s.network), wrong ? 'err-t' : 'ok-t'));
-    stats.push(stat('block', esc(s.blockNumber || '—'), ''));
-    stats.push(stat('wallets with gas', funded + ' of ' + s.wallets.length, funded ? 'ok-t' : 'err-t'));
-    stats.push(stat('total gas', total.toFixed(5) + ' ETH', ''));
-    if (rtt !== null) stats.push(stat('speed', rtt + ' ms', ''));
-    stats.push(stat('spend cap', esc(s.spendCeilingEth) + ' ETH', 'dim'));
-    $('strip').innerHTML = stats.join('');
+    var out='';
+    out+='<div class="big" style="margin:6px 0 14px">'+total.toFixed(4)+
+         ' <span class="sm">ETH ready</span></div>';
+    out+=row('network', esc(s.network)+' · block '+esc(s.blockNumber||'—'),
+             {right: funded+' / '+s.wallets.length, rightLabel:'wallets funded'});
+    out+=row('mode', practice?'Practice — will not buy':'<span class="ok">Live — will buy</span>',
+             {sel:!practice, right:modeBtn, rightLabel:'switch'});
+    out+=row('spend cap', esc(s.spendCeilingEth)+' ETH');
+    $('stats').innerHTML=out;
 
-    if (wrong) {
-      $('alert').innerHTML += msg('err', 'Wrong network — the RPC reports chain ' +
-        esc(s.observedChainId) + ' but the app expects ' + esc(s.chainId) + '.');
-    }
-    if (!funded) {
-      $('alert').innerHTML += msg('warn', 'No wallet holds ETH on this chain, so nothing can be minted. ' +
-        'ETH must be bridged onto Robinhood Chain — Ethereum mainnet ETH will not appear here.');
-    }
-  } catch (e) {
-    $('strip').innerHTML = '<span class="err-t">' + esc(e.message) + '</span>';
-  }
-}
-function stat(k, v, cls){
-  return '<div class="stat"><span class="k">' + esc(k) + '</span>' +
-         '<span class="v ' + (cls || '') + '">' + v + '</span></div>';
+    if(s.observedChainId && s.observedChainId!==s.chainId)
+      $('alert').innerHTML+=msg('err','Wrong network — RPC reports chain '+esc(s.observedChainId)+
+        ', expected '+esc(s.chainId)+'.');
+    if(!funded)
+      $('alert').innerHTML+=msg('warn','No wallet holds ETH on this chain, so nothing can be '+
+        'minted. ETH must be bridged onto Robinhood Chain.');
+  }catch(e){ $('stats').innerHTML=row('status','<span class="bad">'+esc(e.message)+'</span>'); }
 }
 
-/* ── plan ──────────────────────────────────────────────────────────────── */
-function onTargetInput(){
-  clearTimeout(planTimer);
-  $('btnMint').disabled = true;
-  plan = null;
-  if ($('target').value.trim().length >= 42) planTimer = setTimeout(doPlan, 650);
-}
+/* ── plan ── */
+function onTargetInput(){ clearTimeout(planTimer); $('btnMint').disabled=true; plan=null;
+  if($('target').value.trim().length>=42) planTimer=setTimeout(doPlan,650); }
 
 async function doPlan(){
-  var t = $('target').value.trim();
-  if (!t) { $('planOut').innerHTML = msg('warn', 'Paste a contract address or link first.'); return; }
-  busy('btnCheck', 'mintState', true, 'reading the contract');
-  $('planOut').innerHTML = '';
-  $('mintOut').innerHTML = '';
-  try {
-    var p = await api('/api/plan?target=' + encodeURIComponent(t) + '&quantity=' + ($('qty').value || 1));
-    plan = p;
-    renderPlan(p);
-    $('btnMint').disabled = !p.ready;
-    if (!p.ready) $('advanced').open = true;
-  } catch (e) {
-    plan = null;
-    $('planOut').innerHTML = msg('err', esc(e.message));
-  } finally {
-    busy('btnCheck', 'mintState', false);
-  }
+  var t=$('target').value.trim();
+  if(!t){ $('planOut').innerHTML=msg('warn','Paste a contract address or link first.'); return; }
+  busy('btnCheck','mintState',true,'reading contract');
+  $('planOut').innerHTML=''; $('mintOut').innerHTML='';
+  try{
+    var p=await api('/api/plan?target='+encodeURIComponent(t)+'&quantity='+($('qty').value||1));
+    plan=p; renderPlan(p); $('btnMint').disabled=!p.ready;
+    if(!p.ready) $('advanced').open=true;
+  }catch(e){ plan=null; $('planOut').innerHTML=msg('err',esc(e.message)); }
+  finally{ busy('btnCheck','mintState',false); }
 }
 
 function renderPlan(p){
-  var i = p.info || {};
-  var out = [];
-  out.push(p.ready ? msg('ok', esc(p.advice)) : msg(i.soldOut ? 'err' : 'warn', esc(p.advice)));
-  for (var b = 0; b < (p.blockers || []).length; b++) out.push(msg('warn', esc(p.blockers[b])));
+  var i=p.info||{}, art=(i.preview&&i.preview.imageUrl)||'', out=[];
+  if(art) noteArt(art);
 
-  out.push(kv('contract', esc(p.contract) + ' <span class="dim">(' + esc(p.resolvedVia) + ')</span>'));
-  if (i.name) out.push(kv('name', esc(i.name) + (i.symbol ? ' (' + esc(i.symbol) + ')' : '')));
-  if (i.progressPct !== undefined) {
-    var sup = i.totalSupply ? i.totalSupply.value : '?';
-    var max = i.maxSupply ? i.maxSupply.value : '?';
-    out.push(kv('minted', esc(sup) + ' of ' + esc(max)));
-    out.push('<div class="meter"><div style="width:' + Math.min(i.progressPct, 100) + '%"></div></div>');
-    out.push('<div class="hint" style="margin:0">' + esc(i.remaining) + ' left · ' +
-             i.progressPct.toFixed(1) + '% gone</div>');
-  }
-  if (i.priceWei) {
-    var wei = Number(i.priceWei.value);
-    out.push(kv('price each', wei === 0 ? 'free' : (wei / 1e18) + ' ETH'));
-  }
-  if (i.saleOpen) out.push(kv('sale', i.saleOpen.value ? 'open' : 'closed', i.saleOpen.value ? 'ok-t' : 'err-t'));
-  if (i.ownedByWallet !== undefined && Number(i.ownedByWallet) > 0) {
-    out.push(kv('you already own', esc(i.ownedByWallet)));
-  }
-  if (p.chosen) out.push(kv('mint call found', esc(p.chosen.signature), 'ok-t'));
+  out.push(p.ready? msg('ok',esc(p.advice)) : msg(i.soldOut?'err':'warn',esc(p.advice)));
+  for(var b=0;b<(p.blockers||[]).length;b++) out.push(msg('warn',esc(p.blockers[b])));
 
-  if (p.tried && p.tried.length) {
-    var lines = [];
-    for (var t2 = 0; t2 < p.tried.length; t2++) {
-      var c = p.tried[t2];
-      var ok = c.outcome === 'ok';
-      lines.push('<div class="chk"><span class="' + (ok ? 'ok-t' : 'dim') + '">' + (ok ? '✓' : '✗') + '</span>' +
-                 '<span>' + esc(c.signature) + ' <span class="dim">' + esc(c.reason || c.outcome) + '</span></span></div>');
-    }
-    out.push('<details class="bare"><summary>Tried ' + p.tried.length + ' known mint functions</summary>' +
-             lines.join('') + '</details>');
+  if(art||i.name){
+    out.push('<div class="row" style="align-items:center">'+
+      (art?'<img class="thumb big" src="'+esc(art)+'" alt="" onerror="this.style.display=\'none\'">'
+          :'<div class="thumb big ph">◆</div>')+
+      '<div class="grow"><div class="k">collection</div>'+
+      '<div class="v" style="font-size:19px">'+esc(i.name||'Unnamed')+
+      (i.symbol?' <span class="mute">'+esc(i.symbol)+'</span>':'')+'</div></div></div>');
   }
-  $('planOut').innerHTML = out.join('');
+
+  out.push(row('contract', esc(shortAddr(p.contract)), {right:esc(p.resolvedVia), rightLabel:'from'}));
+
+  if(i.progressPct!==undefined){
+    var sup=i.totalSupply?i.totalSupply.value:'?', max=i.maxSupply?i.maxSupply.value:'?';
+    out.push(row('minted', esc(sup)+' <span class="mute">of '+esc(max)+'</span>',
+      {right:esc(i.remaining), rightLabel:'left'}));
+    out.push('<div class="meter"><div style="width:'+Math.min(i.progressPct,100)+'%"></div></div>');
+  }
+  if(i.priceWei){ var wei=Number(i.priceWei.value);
+    out.push(row('price each', wei===0?'Free':(wei/1e18)+' ETH')); }
+  if(i.saleOpen)
+    out.push(row('sale', i.saleOpen.value?'<span class="ok">Open</span>':'<span class="bad">Closed</span>'));
+  if(i.ownedByWallet!==undefined && Number(i.ownedByWallet)>0)
+    out.push(row('you already own', esc(i.ownedByWallet)));
+  if(p.chosen) out.push(row('mint call', '<span class="ok">'+esc(p.chosen.signature)+'</span>'));
+
+  if(p.tried&&p.tried.length){
+    var lines=[];
+    for(var t2=0;t2<p.tried.length;t2++){ var c=p.tried[t2], ok=c.outcome==='ok';
+      lines.push('<div class="chk"><span class="'+(ok?'ok':'mute')+'">'+(ok?'✓':'✗')+'</span>'+
+        '<span>'+esc(c.signature)+' <span class="mute">'+esc(c.reason||c.outcome)+'</span></span></div>'); }
+    out.push('<details><summary>Tried '+p.tried.length+' mint functions</summary>'+lines.join('')+'</details>');
+  }
+  $('planOut').innerHTML=out.join('');
 }
 
-/* ── mint ──────────────────────────────────────────────────────────────── */
+/* ── mint ── */
 async function doMint(){
-  var practice = isPractice();
-  if (!practice) {
-    var name = (plan && plan.info && plan.info.name) || (plan && plan.contract) || 'this collection';
-    if (!confirm('This spends real ETH now.\n\n' + name + '\nQuantity: ' + $('qty').value + '\n\nContinue?')) return;
+  var practice=isPractice();
+  if(!practice){
+    var nm=(plan&&plan.info&&plan.info.name)||(plan&&plan.contract)||'this collection';
+    if(!confirm('This spends real ETH now.\n\n'+nm+'\nQuantity: '+$('qty').value+'\n\nContinue?')) return;
   }
-  busy('btnMint', 'mintState', true, practice ? 'signing (not sending)' : 'minting');
-  $('mintOut').innerHTML = '';
-  try {
-    var body = { quantity: $('qty').value, dryRun: String(practice), requireSimulation: 'true' };
-    if (plan && plan.contract) body.contract = plan.contract;
+  busy('btnMint','mintState',true,practice?'signing':'minting'); $('mintOut').innerHTML='';
+  try{
+    var body={quantity:$('qty').value,dryRun:String(practice),requireSimulation:'true'};
+    if(plan&&plan.contract) body.contract=plan.contract;
+    var cd=$('calldata').value.trim(), fn=$('fn').value.trim();
+    if(cd) body.calldata=cd;
+    else if(fn){ body.mintFunction=fn; body.mintArgs=$('args').value.trim(); }
+    else if(plan&&plan.chosen){ body.mintFunction=plan.chosen.signature; body.mintArgs=plan.chosen.args.join(','); }
+    var pr=$('price').value.trim();
+    if(pr) body.priceEth=pr;
+    else if(plan&&plan.chosen) body.valueEth=String(Number(plan.chosen.valueWei)/1e18);
+    if(plan&&plan.chosen&&plan.chosen.gasLimit) body.gasLimit=plan.chosen.gasLimit;
 
-    var cd = $('calldata').value.trim();
-    var fn = $('fn').value.trim();
-    if (cd) body.calldata = cd;
-    else if (fn) { body.mintFunction = fn; body.mintArgs = $('args').value.trim(); }
-    else if (plan && plan.chosen) { body.mintFunction = plan.chosen.signature; body.mintArgs = plan.chosen.args.join(','); }
-
-    var pr = $('price').value.trim();
-    if (pr) body.priceEth = pr;
-    else if (plan && plan.chosen) body.valueEth = String(Number(plan.chosen.valueWei) / 1e18);
-    if (plan && plan.chosen && plan.chosen.gasLimit) body.gasLimit = plan.chosen.gasLimit;
-
-    var r = await api('/api/mint', { method: 'POST', body: JSON.stringify(body) });
-    var out = [];
-    if (r.dryRun) out.push(msg('warn', 'Practice mode — ' + r.transactions.length + ' signed, nothing sent.'));
-    else if (r.minted > 0) out.push(msg('ok', 'Minted ' + r.minted + ' of ' + r.submitted + '.'));
-    else out.push(msg('err', 'Nothing confirmed (' + r.failed + ' failed).'));
-    out.push(txTable(r.transactions));
-    $('mintOut').innerHTML = out.join('');
-    boot();
-  } catch (e) {
-    $('mintOut').innerHTML = msg('err', esc(e.message));
-  } finally {
-    busy('btnMint', 'mintState', false);
-  }
+    var r=await api('/api/mint',{method:'POST',body:JSON.stringify(body)});
+    var out=[];
+    if(r.dryRun) out.push(msg('warn','Practice — '+r.transactions.length+' signed, nothing sent.'));
+    else if(r.minted>0) out.push(msg('ok','Minted '+r.minted+' of '+r.submitted+'.'));
+    else out.push(msg('err','Nothing confirmed ('+r.failed+' failed).'));
+    for(var i=0;i<r.transactions.length;i++){ var t=r.transactions[i];
+      out.push(row(shortAddr(t.from), t.accepted?'<span class="ok">sent</span>':'<span class="bad">rejected</span>',
+        {right:'<a href="'+esc(t.url)+'" target="_blank" rel="noopener">'+esc(t.hash.slice(0,10))+'…</a>',
+         rightLabel:'tx'})); }
+    $('mintOut').innerHTML=out.join(''); boot();
+  }catch(e){ $('mintOut').innerHTML=msg('err',esc(e.message)); }
+  finally{ busy('btnMint','mintState',false); }
 }
 
-function txTable(txs){
-  if (!txs || !txs.length) return '';
-  var rows = [];
-  for (var i = 0; i < txs.length; i++) {
-    var t = txs[i];
-    rows.push('<tr><td>' + esc(shortAddr(t.from)) + '</td>' +
-      '<td class="' + (t.accepted ? 'ok-t' : 'err-t') + '">' + (t.accepted ? 'sent' : 'rejected') + '</td>' +
-      '<td><a href="' + esc(t.url) + '" target="_blank" rel="noopener">' + esc(t.hash.slice(0,14)) + '…</a></td></tr>');
-    if (t.error) rows.push('<tr><td colspan="3" class="err-t">' + esc(t.error) + '</td></tr>');
-  }
-  return '<div class="tablewrap"><table><tbody>' + rows.join('') + '</tbody></table></div>';
-}
-
-/* ── hunt ──────────────────────────────────────────────────────────────── */
-function toggleHunt(){ if (hunting) stopHunt(); else startHunt(); }
-
+/* ── hunt ── */
+function toggleHunt(){ if(hunting) stopHunt(); else startHunt(); }
 function startHunt(){
-  if (!isPractice()) {
-    var ok = confirm('Live mode: this will spend real ETH automatically whenever a collection ' +
-      'passes every rule.\n\nThe server still caps total spending.\n\nStart hunting?');
-    if (!ok) return;
-  }
-  hunting = true;
-  $('btnHunt').textContent = 'Stop hunting';
-  $('btnHunt').className = 'stopbtn xl';
-  log(isPractice() ? 'Started in practice mode — it will not buy.' : 'Started LIVE — it will buy.',
-      isPractice() ? 'warn-t' : 'ok-t');
+  if(!isPractice() && !confirm('Live: this spends real ETH automatically whenever a collection '+
+    'passes every rule.\n\nThe server still caps total spending.\n\nStart?')) return;
+  hunting=true; $('btnHunt').textContent='Stop hunting'; $('btnHunt').className='danger xl';
+  log(isPractice()?'Started — practice mode.':'Started LIVE — it will buy.');
   runRound();
 }
-function stopHunt(){
-  hunting = false;
-  $('btnHunt').textContent = 'Start hunting';
-  $('btnHunt').className = 'go xl';
-  $('huntState').innerHTML = '';
-  log('Stopped.', 'dim');
-}
+function stopHunt(){ hunting=false; $('btnHunt').textContent='Start hunting';
+  $('btnHunt').className='solid xl'; $('huntState').innerHTML=''; log('Stopped.'); }
 async function huntOnce(){ await runRound(true); }
 
 function huntQuery(){
-  var q = ['dryRun=' + String(isPractice())];
-  var r = rules(), keys = Object.keys(r);
-  for (var i = 0; i < keys.length; i++) {
-    q.push(encodeURIComponent(keys[i]) + '=' + encodeURIComponent(r[keys[i]]));
-  }
-  return q.join('&');
-}
+  var q=['dryRun='+String(isPractice())], r=rules(), keys=Object.keys(r);
+  for(var i=0;i<keys.length;i++) q.push(encodeURIComponent(keys[i])+'='+encodeURIComponent(r[keys[i]]));
+  return q.join('&'); }
 
 async function runRound(single){
   rounds++;
-  $('huntState').innerHTML = '<span class="spin"></span> round ' + rounds + ' — listening to the chain…';
-  $('btnOnce').disabled = true;
-  try {
-    var r = await api('/api/hunt?' + huntQuery());
-    if (r.serverForcesDryRun && !serverDry) { serverDry = true; renderMode(); }
-    if (r.skipped) {
-      log('Skipped — a round was already running.', 'dim');
-    } else {
+  $('huntState').innerHTML='<span class="spin"></span> round '+rounds+' — listening…';
+  $('btnOnce').disabled=true;
+  try{
+    var r=await api('/api/hunt?'+huntQuery());
+    if(r.serverForcesDryRun&&!serverDry){ serverDry=true; boot(); }
+    if(r.skipped){ log('Skipped — a round was already running.'); }
+    else{
       renderHunt(r);
-      var line = r.observed.mintsSeen + ' mints seen · ' + r.candidates.length + ' checked · ' +
-                 r.qualified + ' passed' + (r.mintedCollections ? ' · ' + r.mintedCollections + ' BOUGHT' : '');
-      log(line, r.mintedCollections ? 'ok-t' : '');
-      if (!r.feedConnected) log('Could not reach the chain feed this round.', 'err-t');
-      if (r.mintedCollections) boot();
+      log(r.observed.mintsSeen+' mints seen · '+r.candidates.length+' checked · '+r.qualified+
+          ' passed'+(r.mintedCollections?' · '+r.mintedCollections+' BOUGHT':''));
+      // Name anything that cleared every rule but still was not bought.
+      for(var ci=0;ci<r.candidates.length;ci++){
+        var cd=r.candidates[ci];
+        if(cd.evaluation.passed && cd.minted && cd.minted.error)
+          log('NOT BOUGHT — '+cd.minted.error);
+      }
+      if(!r.feedConnected) log('Could not reach the chain feed.');
+      if(r.mintedCollections) boot();
     }
-  } catch (e) {
-    log('Error: ' + e.message, 'err-t');
-    $('huntOut').innerHTML = msg('err', esc(e.message));
-    if (/token|unauthor/i.test(e.message)) { stopHunt(); $('btnOnce').disabled = false; return; }
+  }catch(e){
+    log('Error: '+e.message);
+    $('huntOut').innerHTML=msg('err',esc(e.message));
+    if(/token|unauthor/i.test(e.message)){ stopHunt(); $('btnOnce').disabled=false; return; }
   }
-  $('huntState').innerHTML = '';
-  $('btnOnce').disabled = false;
-  if (!single && hunting) setTimeout(runRound, 1200);
-}
-
-function pill(status){
-  if (status === 'live') return '<span class="pill p-live">minting now</span>';
-  if (status === 'slowing') return '<span class="pill p-slow">slowing</span>';
-  return '<span class="pill p-quiet">stopped</span>';
+  $('huntState').innerHTML=''; $('btnOnce').disabled=false;
+  if(!single&&hunting) setTimeout(runRound,1200);
 }
 
 function renderHunt(r){
-  var out = [];
-  if (r.dryRun) out.push(msg('info', 'Practice mode — nothing was bought this round.'));
-  if (!r.candidates.length) {
-    $('huntOut').innerHTML = out.join('') + msg('info', esc(r.note));
-    return;
+  var out=[];
+  if(!r.candidates.length){ $('huntOut').innerHTML=msg('warn',esc(r.note||'Nothing matched.')); return; }
+  for(var i=0;i<r.candidates.length;i++) out.push(candidateBlock(r.candidates[i]));
+  $('huntOut').innerHTML=out.join('');
+}
+
+function candidateBlock(c){
+  var col=c.collection, info=c.info||{}, ev=c.evaluation;
+  var art=(info.preview&&info.preview.imageUrl)||'';
+  if(art) noteArt(art);
+  var chip = ev.passed? '<span class="chip buy">passed</span>'
+    : '<span class="chip '+(col.status==='live'?'live':'skip')+'">'+esc(col.status)+'</span>';
+  var left = info.soldOut? 'sold out' : (info.remaining!==undefined? info.remaining+' left' : '—');
+  var head = row(esc(info.name||shortAddr(col.contract)),
+    esc(col.attemptsPerMinute)+'/min <span class="mute">· '+esc(col.uniqueMinters)+' wallets · '+
+    esc(left)+'</span>',
+    {img:art, sel:ev.passed, right:chip, rightLabel:
+      ev.projectedSelloutSec!==undefined? 'sells out '+fmtDur(ev.projectedSelloutSec) : ''});
+
+  // A collection that passed every rule is the whole point of the round, so its
+  // outcome goes straight on the page. Burying "why it did not buy" inside a
+  // collapsed section is what made this look like silent failure.
+  var outcome='';
+  if(ev.passed){
+    if(!c.minted){
+      outcome = msg('warn','Passed every rule, but no mint was attempted. '+
+        'This is a bug — please report it.');
+    } else if(c.minted.confirmed>0){
+      outcome = msg('ok','Bought — '+c.minted.confirmed+' of '+c.minted.attempted+' confirmed.');
+    } else if(c.minted.error){
+      outcome = msg('warn','<b>Passed, but not bought.</b><br>'+esc(c.minted.error));
+    } else if(c.minted.attempted>0){
+      outcome = msg('warn','Sent '+c.minted.attempted+', none confirmed yet.');
+    }
   }
-  var rows = [];
-  for (var i = 0; i < r.candidates.length; i++) rows.push(candidateRows(r.candidates[i]));
-  out.push('<div class="tablewrap"><table><thead><tr>' +
-    '<th>Collection</th><th>Still going?</th><th>Speed</th><th>Wallets</th>' +
-    '<th>Left</th><th>Sells out</th><th>Verdict</th></tr></thead><tbody>' +
-    rows.join('') + '</tbody></table></div>');
-  $('huntOut').innerHTML = out.join('');
+
+  var checks=[];
+  for(var k=0;k<ev.checks.length;k++){ var ch=ev.checks[k];
+    var mark=ch.skipped?'–':(ch.passed?'✓':'✗'), cls=ch.skipped?'mute':(ch.passed?'ok':'bad');
+    checks.push('<div class="chk"><span class="'+cls+'">'+mark+'</span><span><b>'+esc(ch.name)+
+      '</b> — '+esc(ch.actual)+' <span class="mute">(needs '+esc(ch.required)+')</span>'+
+      '<div class="why">'+esc(ch.why)+'</div></span></div>'); }
+
+  var txs = c.minted? txLinks(c.minted) : '';
+  // Open by default when it passed, so the detail is already in front of you.
+  return head+outcome+'<details'+(ev.passed?' open':'')+'><summary>'+esc(ev.reason)+
+    '</summary>'+checks.join('')+txs+'</details>';
 }
 
-function candidateRows(c){
-  var col = c.collection, info = c.info || {}, ev = c.evaluation;
-  var left = info.soldOut ? '<span class="err-t">sold out</span>'
-    : (info.remaining !== undefined ? esc(info.remaining) : '<span class="dim">unknown</span>');
-  var sellout = ev.projectedSelloutSec !== undefined ? fmtDur(ev.projectedSelloutSec) : '—';
-  var nameLine = info.name ? '<div class="dim" style="font-size:11px">' + esc(info.name) + '</div>' : '';
-  var verdict = ev.passed ? '<span class="pill p-buy">buy</span>' : '<span class="pill p-skip">skip</span>';
-
-  var main = '<tr>' +
-    '<td><a href="#" onclick="pick(\'' + esc(col.contract) + '\');return false">' +
-      esc(shortAddr(col.contract)) + '</a>' + nameLine + '</td>' +
-    '<td>' + pill(col.status) + '</td>' +
-    '<td>' + esc(col.attemptsPerMinute) + '/min</td>' +
-    '<td>' + esc(col.uniqueMinters) + '</td>' +
-    '<td>' + left + '</td>' +
-    '<td>' + esc(sellout) + '</td>' +
-    '<td>' + verdict + '</td></tr>';
-
-  var checks = [];
-  for (var k = 0; k < ev.checks.length; k++) {
-    var ch = ev.checks[k];
-    var mark = ch.skipped ? '–' : (ch.passed ? '✓' : '✗');
-    var cls = ch.skipped ? 'dim' : (ch.passed ? 'ok-t' : 'err-t');
-    checks.push('<div class="chk"><span class="' + cls + '">' + mark + '</span>' +
-      '<span><b>' + esc(ch.name) + '</b> — ' + esc(ch.actual) +
-      ' <span class="dim">(needs ' + esc(ch.required) + ')</span>' +
-      '<div class="why">' + esc(ch.why) + '</div></span></div>');
-  }
-  var minted = c.minted ? mintedBlock(c.minted) : '';
-  var detail = '<tr><td colspan="7" style="padding-top:0">' +
-    '<details class="bare"><summary>' + esc(ev.reason) + '</summary>' +
-    checks.join('') + minted + '</details></td></tr>';
-
-  return main + detail;
+function txLinks(m){
+  var out='';
+  for(var i=0;i<(m.txs||[]).length;i++)
+    out+='<div class="hint"><a href="'+esc(m.txs[i].url)+'" target="_blank" rel="noopener">'+
+      esc(m.txs[i].hash.slice(0,16))+'…</a></div>';
+  return out;
 }
 
-function mintedBlock(m){
-  if (m.error && !m.attempted) return msg('warn', esc(m.error));
-  var head = msg(m.confirmed ? 'ok' : 'warn', m.confirmed + ' confirmed of ' + m.attempted + ' sent');
-  var links = [];
-  for (var i = 0; i < (m.txs || []).length; i++) {
-    links.push('<div style="font-size:12px"><a href="' + esc(m.txs[i].url) +
-      '" target="_blank" rel="noopener">' + esc(m.txs[i].hash.slice(0,16)) + '…</a></div>');
-  }
-  return head + links.join('');
-}
+function pick(a){ $('target').value=a; $('btnMint').disabled=true; doPlan();
+  $('target').scrollIntoView({behavior:'smooth',block:'center'}); }
 
-function pick(addr){
-  $('target').value = addr;
-  $('btnMint').disabled = true;
-  doPlan();
-  $('target').scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-/* ── init ──────────────────────────────────────────────────────────────── */
-if (localStorage.getItem('nftmint_practice') === null) localStorage.setItem('nftmint_practice', '0');
-$('token').value = tok();
-$('target').addEventListener('input', onTargetInput);
-window.addEventListener('beforeunload', function(e){ if (hunting) { e.preventDefault(); e.returnValue = ''; } });
-renderTok();
-renderRules();
-boot();
+/* ── init ── */
+if(localStorage.getItem('nftmint_practice')===null) localStorage.setItem('nftmint_practice','0');
+$('token').value=tok();
+$('target').addEventListener('input',onTargetInput);
+window.addEventListener('beforeunload',function(e){ if(hunting){ e.preventDefault(); e.returnValue=''; } });
+renderTok(); renderRules(); boot();
 </script>
 </body>
 </html>

@@ -6,6 +6,7 @@ import {
   type Hex,
 } from 'viem';
 import { parseFunction, selectorOf } from './calldata.js';
+import { fetchNftPreview, type NftPreview } from './nftimage.js';
 import type { RpcClient } from './rpc.js';
 
 /**
@@ -75,6 +76,8 @@ export interface ContractInfo {
   saleOpen?: ProbedValue<boolean>;
   /** How many tokens the given wallet already holds. */
   ownedByWallet?: string;
+  /** Artwork preview, when one was requested and could be resolved. */
+  preview?: NftPreview;
   /** Plain-language read of the contract's state. */
   summary: string;
 }
@@ -164,6 +167,14 @@ export async function inspectContract(
   client: RpcClient,
   contract: Address,
   wallet?: Address,
+  /**
+   * Resolve the artwork too.
+   *
+   * Off by default because it costs a contract read plus an off-chain metadata
+   * fetch. Worth it for a single collection someone is looking at; too slow to
+   * do for every candidate in a hunt round, which has a hard time budget.
+   */
+  withPreview = false,
 ): Promise<ContractInfo> {
   const code = await client.call<Hex>('eth_getCode', [contract, 'latest']);
   const hasCode = Boolean(code) && code !== '0x';
@@ -208,6 +219,16 @@ export async function inspectContract(
       info.remaining = (max > minted ? max - minted : 0n).toString();
       info.soldOut = minted >= max;
     }
+  }
+
+  if (withPreview) {
+    info.preview = await fetchNftPreview(
+      client,
+      contract,
+      totalSupply ? BigInt(totalSupply.value) : undefined,
+    );
+    // Metadata usually carries a better name than the contract does.
+    if (!info.name && info.preview.tokenName) info.name = info.preview.tokenName;
   }
 
   info.summary = describe(info);

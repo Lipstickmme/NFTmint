@@ -203,7 +203,9 @@ export async function runHuntCycle(
       if (mintedCollections >= hunt.maxMintsPerCycle) {
         candidate.minted = {
           attempted: 0, accepted: 0, confirmed: 0, txs: [],
-          error: 'per-cycle mint limit reached',
+          error:
+            `already bought ${mintedCollections} collection(s) this round — ` +
+            `raise HUNT_MAX_MINTS_PER_CYCLE to buy more per round`,
         };
         continue;
       }
@@ -271,7 +273,11 @@ async function mintCandidate(
   if (!call) {
     return {
       ...empty,
-      error: `no safe mint call could be built for selector ${collection.topSelector ?? 'unknown'}`,
+      error:
+        `cannot safely build the mint call: this collection is minted via selector ` +
+        `${collection.topSelector ?? 'unknown'}, which is not one we know how to decode. ` +
+        `Refusing rather than sending calldata we do not understand. Mint it from the ` +
+        `manual panel instead.`,
     };
   }
 
@@ -292,7 +298,13 @@ async function mintCandidate(
       'latest',
     ]);
   } catch (err) {
-    return { ...empty, error: `simulation reverted: ${errorMessage(err)}` };
+    return {
+      ...empty,
+      error:
+        `the mint would fail on chain, so nothing was sent: ${errorMessage(err)}. ` +
+        `Common causes are a per-wallet limit already reached, an allowlist, or the ` +
+        `sale closing between the scan and the attempt.`,
+    };
   }
 
   let gasLimit = 300_000n;
@@ -374,7 +386,9 @@ async function mintCandidate(
         url: explorerTxUrl(config.network, t.hash),
         accepted: false,
       })),
-      error: 'dry run — not broadcast',
+      error:
+        'practice mode — everything was prepared and signed, but nothing was sent. ' +
+        'Switch to live in the header to buy for real.',
     };
   }
 
