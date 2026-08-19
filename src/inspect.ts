@@ -61,9 +61,29 @@ export interface ProbedValue<T> {
   source: string;
 }
 
+/** ERC-165 interface ids for the two NFT standards. */
+export const ERC721_INTERFACE = '0x80ac58cd';
+export const ERC1155_INTERFACE = '0xd9b67a26';
+
 export interface ContractInfo {
   contract: Address;
   hasCode: boolean;
+  /**
+   * Whether this is actually an NFT contract.
+   *
+   *   true      — ERC-165 confirms ERC-721 or ERC-1155.
+   *   false     — ERC-165 answered and said it is neither.
+   *   undefined — the contract does not implement ERC-165, so this is unknown
+   *               and the weaker `looksLikeNft` signal has to stand in.
+   *
+   * This gained teeth when mint detection stopped requiring a hardcoded
+   * selector: a busy DeFi contract with hundreds of distinct callers now looks
+   * exactly like a hot drop on the feed, and the only thing separating them is
+   * asking the contract what it is.
+   */
+  isNft?: boolean;
+  /** Exposes the metadata and supply reads an NFT normally would. */
+  looksLikeNft: boolean;
   name?: string;
   symbol?: string;
   totalSupply?: ProbedValue<string>;
@@ -187,11 +207,12 @@ export async function inspectContract(
     return {
       contract,
       hasCode: false,
+      looksLikeNft: false,
       summary: 'No contract deployed at this address on this network.',
     };
   }
 
-  const [nameRaw, symbolRaw, totalSupply, maxSupply, priceWei, saleOpen, owned] =
+  const [nameRaw, symbolRaw, totalSupply, maxSupply, priceWei, saleOpen, owned, isNft] =
     await Promise.all([
       probe(client, contract, 'name()'),
       probe(client, contract, 'symbol()'),
@@ -200,11 +221,16 @@ export async function inspectContract(
       probeFirst(client, contract, PRICE_FNS, decodeUint),
       probeFirst(client, contract, SALE_OPEN_FNS, decodeBool),
       wallet ? balanceOf(client, contract, wallet) : Promise.resolve(undefined),
+      supportsNftInterface(client, contract),
     ]);
 
   const info: ContractInfo = {
     contract,
     hasCode: true,
+    isNft,
+    // The fallback for contracts that skip ERC-165: metadata plus a supply
+    // read is what an NFT looks like and a router or a pool does not.
+    looksLikeNft: Boolean(nameRaw) && (totalSupply !== undefined || maxSupply !== undefined),
     name: nameRaw ? decodeString(nameRaw) : undefined,
     symbol: symbolRaw ? decodeString(symbolRaw) : undefined,
     totalSupply,
@@ -239,11 +265,47 @@ export async function inspectContract(
   return info;
 }
 
+/**
+ * Ask the contract whether it is an NFT, via ERC-165.
+ *
+ * Returns undefined when the contract does not implement ERC-165 at all, which
+ * is a different answer from "no" and has to stay distinguishable: plenty of
+ * older ERC-721s answer nothing here.
+ */
+export async function supportsNftInterface(
+  client: RpcClient,
+  contract: Address,
+): Promise<boolean | undefined> {
+  const ask = async (interfaceId: string): Promise<boolean | undefined> => {
+    try {
+      const fn = parseFunction('supportsInterface(bytes4) view returns (bool)');
+      const data = encodeFunctionData({
+        abi: [fn] as Abi,
+        functionName: 'supportsInterface',
+        args: [interfaceId as Hex],
+      });
+      const raw = await client.call<Hex>('eth_call', [{ to: contract, data }, 'latest']);
+      if (!raw || raw === '0x') return undefined;
+      return BigInt(raw) === 1n;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const [erc721, erc1155] = await Promise.all([ask(ERC721_INTERFACE), ask(ERC1155_INTERFACE)]);
+  if (erc721 === undefined && erc1155 === undefined) return undefined;
+  return erc721 === true || erc1155 === true;
+}
+
 /** Turn the probed fields into one sentence a human can act on. */
 function describe(info: ContractInfo): string {
   const parts: string[] = [];
 
   if (info.name) parts.push(info.name + (info.symbol ? ` (${info.symbol})` : ''));
+
+  if (info.isNft === false) {
+    parts.push('NOT an NFT contract — it says it is neither ERC-721 nor ERC-1155');
+  }
 
   if (info.soldOut) {
     parts.push('SOLD OUT — nothing left to mint');

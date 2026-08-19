@@ -1,5 +1,6 @@
 import { formatEther, type Hex } from 'viem';
 import {
+  assertPublicHost,
   createAccount,
   normalizeRpcUrl,
   privateKeysOf,
@@ -53,6 +54,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
       if (method === 'PATCH') {
         if ('rpcUrl' in body) {
           const url = normalizeRpcUrl(String(body.rpcUrl ?? ''));
+          // Resolve before storing: the string check cannot see a public
+          // hostname whose DNS record points at the metadata service.
+          await assertPublicHost(url);
           account.rpcUrl = url || undefined;
         }
         if ('autoMint' in body) account.autoMint = Boolean(body.autoMint);
@@ -75,7 +79,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
         };
       }
 
-      return { ...toView(account), wallets: await balances(account.rpcUrl, account) };
+      return {
+        ...toView(account),
+        wallets: await balances(account.rpcUrl, account),
+        // So the screen can say which endpoint is in use when the account has
+        // not set one, instead of showing an empty box with no explanation.
+        defaultRpcHost: defaultRpcHost(),
+      };
     },
   );
 }
@@ -128,6 +138,21 @@ async function balances(
     );
   } finally {
     client.destroy();
+  }
+}
+
+/**
+ * The endpoint an account falls back to.
+ *
+ * Host only: the path of an RPC URL usually carries the operator's API key,
+ * and this is rendered in someone else's browser.
+ */
+function defaultRpcHost(): string {
+  const url = loadHuntRuntime(process.env, false).rpcUrls[0];
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
   }
 }
 

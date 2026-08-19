@@ -10,7 +10,7 @@ import { MintTracker, type TrackedCollection } from './tracker.js';
 import { parseExtraSelectors } from './mintdetect.js';
 import { inspectContract, type ContractInfo } from './inspect.js';
 import { evaluate, formatDuration, type Evaluation, type HuntCriteria } from './criteria.js';
-import { buildAutoMintCall } from './mintcall.js';
+import { buildAutoMintCalls, recoverSampleSender, type AutoMintCall } from './mintcall.js';
 import { signOne, type PreparedTx } from './presign.js';
 import { submitAll, waitForReceipts } from './submit.js';
 import { loadWallets, NonceManager, type Wallet } from './wallet.js';
@@ -60,6 +60,10 @@ export interface Candidate {
     accepted: number;
     confirmed: number;
     txs: Array<{ hash: string; url: string; accepted: boolean }>;
+    /** How the calldata was produced, once one was proven against the chain. */
+    strategy?: string;
+    /** Plain-language account of what was sent. */
+    how?: string;
     error?: string;
   };
 }
@@ -252,6 +256,7 @@ export async function runHuntCycle(
         submitClients: [...submitOnly, ...clients],
         dryRun: hunt.dryRun,
         freeOnly: hunt.criteria.freeOnly,
+        maxValueWei: hunt.criteria.maxPriceWei,
       });
       if (!candidate.minted.error) mintedCollections += 1;
     }
@@ -301,52 +306,96 @@ interface MintCandidateParams {
   dryRun: boolean;
   /** When true, send zero value regardless of what was observed. */
   freeOnly: boolean;
+  /** Hard ceiling on the value attached to a single mint. */
+  maxValueWei: bigint;
 }
 
 /** Mint one qualifying collection across every wallet. */
 async function mintCandidate(
   params: MintCandidateParams,
 ): Promise<NonNullable<Candidate['minted']>> {
-  const { collection, config, wallets, primary, submitClients, dryRun, freeOnly } = params;
+  const { collection, config, wallets, primary, submitClients, dryRun, freeOnly, maxValueWei } =
+    params;
   const empty = { attempted: 0, accepted: 0, confirmed: 0, txs: [] };
 
-  const call = buildAutoMintCall(collection.topSelector, collection.sampleCalldata);
+  // In free-only mode send nothing, whatever the feed showed. Otherwise pay
+  // what real minters were observed paying — but never more than the ceiling,
+  // whatever the observation said.
+  //
+  // The criteria already reject an over-priced collection, so this clamp should
+  // never bind. It is here because `observedValueWei` is an average of numbers
+  // an attacker can push up by spamming the contract, and a single divergence
+  // between the check and the spend would be paid for in ETH. Two independent
+  // bounds on the same number is the cheap insurance.
+  const observedValue = BigInt(collection.observedValueWei);
+  const value = freeOnly
+    ? 0n
+    : observedValue > maxValueWei
+      ? maxValueWei
+      : observedValue;
+  const contract = collection.contract as Address;
+
+  // Who sent the calldata we sampled. One ECDSA recovery, which is far too slow
+  // over a live feed but nothing at all here — and it is what lets the address
+  // swap work on an entrypoint nobody has ever seen.
+  const observedSender = await recoverSampleSender(collection.sampleRaw);
+
+  const candidates = buildAutoMintCalls({
+    selector: collection.topSelector,
+    observed: collection.sampleCalldata,
+    observedSender,
+  });
+
+  if (candidates.length === 0) {
+    return {
+      ...empty,
+      error:
+        `no working mint transaction was captured for this collection, so there is ` +
+        `nothing to copy. This usually means it was flagged from very few attempts. ` +
+        `It will resolve on its own once more people mint it.`,
+    };
+  }
+
+  // Let the chain decide. Every candidate is a guess about where the recipient
+  // sits in the calldata; a simulation from our own wallet settles it for the
+  // price of a round trip, and nothing is broadcast until one passes.
+  let call: AutoMintCall | undefined;
+  const rejected: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      await primary.call('eth_call', [
+        {
+          from: wallets[0].address,
+          to: contract,
+          data: candidate.buildFor(wallets[0].address),
+          value: `0x${value.toString(16)}`,
+        },
+        'latest',
+      ]);
+      call = candidate;
+      break;
+    } catch (err) {
+      rejected.push(`${candidate.strategy}: ${errorMessage(err)}`);
+    }
+  }
+
   if (!call) {
     return {
       ...empty,
       error:
-        `cannot safely build the mint call: this collection is minted via selector ` +
-        `${collection.topSelector ?? 'unknown'}, which is not one we know how to decode. ` +
-        `Refusing rather than sending calldata we do not understand. Mint it from the ` +
-        `manual panel instead.`,
+        `every way of reproducing this mint was rejected on chain, so nothing was sent. ` +
+        `Tried ${rejected.length} — ${rejected.join(' | ')}. Common causes are a ` +
+        `per-wallet limit already reached, an allowlist you are not on, or the sale ` +
+        `closing between the scan and the attempt.`,
     };
   }
 
-  // In free-only mode send nothing, whatever the feed showed. Otherwise pay
-  // what real minters were observed paying.
-  const value = freeOnly ? 0n : BigInt(collection.observedValueWei);
-  const contract = collection.contract as Address;
-
-  // Simulate once before committing every wallet to a revert.
-  try {
-    await primary.call('eth_call', [
-      {
-        from: wallets[0].address,
-        to: contract,
-        data: call.buildFor(wallets[0].address),
-        value: `0x${value.toString(16)}`,
-      },
-      'latest',
-    ]);
-  } catch (err) {
-    return {
-      ...empty,
-      error:
-        `the mint would fail on chain, so nothing was sent: ${errorMessage(err)}. ` +
-        `Common causes are a per-wallet limit already reached, an allowlist, or the ` +
-        `sale closing between the scan and the attempt.`,
-    };
-  }
+  log.info('MINT CALL CHOSEN', {
+    contract,
+    strategy: call.strategy,
+    signature: call.signature ?? 'unknown entrypoint',
+    rejected: rejected.length,
+  });
 
   let gasLimit = 300_000n;
   try {
@@ -422,6 +471,8 @@ async function mintCandidate(
       attempted: prepared.length,
       accepted: 0,
       confirmed: 0,
+      strategy: call.strategy,
+      how: call.describe,
       txs: prepared.map((t) => ({
         hash: t.hash,
         url: explorerTxUrl(config.network, t.hash),
@@ -450,6 +501,8 @@ async function mintCandidate(
     attempted: prepared.length,
     accepted: accepted.length,
     confirmed,
+    strategy: call.strategy,
+    how: call.describe,
     txs: outcomes.map((o) => ({
       hash: o.tx.hash,
       url: explorerTxUrl(config.network, o.tx.hash),

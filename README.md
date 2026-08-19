@@ -331,6 +331,46 @@ still need a price ceiling set in the environment.
 server-side so the browser cannot turn it live — useful when handing someone a
 deployment — set `HUNT_DRY_RUN=true`.
 
+### How auto-mint decides what to send
+
+Two things used to make this fail, and both are gone.
+
+**It only looked for two dozen hardcoded function names.** A collection whose
+entrypoint was `mintTo(address,uint256)` — or any of the hundreds of shapes in
+the wild — was never tracked at all, so it could not be scored, let alone
+bought. Detection is now structural: any contract call is watched, obvious
+non-mints (transfers, approvals, swaps) are dropped outright, and an
+unrecognised entrypoint has to be called repeatedly before it costs anything.
+Recognised selectors still take the fast path.
+
+**It refused anything it could not decode.** Now it copies. Somebody just minted
+this collection successfully, seconds ago, on this chain — their transaction is
+the specification. Three candidates are produced from it:
+
+1. **address swap** — find the minter's own address inside their calldata and
+   put yours in its place. No ABI, no signature, no decode; it works on
+   entrypoints nobody has ever seen.
+2. **ABI re-encode** — for selectors we recognise, decode properly and
+   substitute the address arguments.
+3. **verbatim** — replay byte for byte, which is correct whenever there is no
+   recipient encoded at all.
+
+Then the chain decides. Each candidate is simulated with `eth_call` from your
+own wallet and the first that succeeds is the one broadcast. Nothing is sent on
+a guess, and a wrong guess costs a round trip rather than a transaction.
+
+The trap this is all built around: replaying an observed `mint(address,uint256)`
+verbatim mints the NFT **to the wallet you copied from** — a silent, total
+failure that still costs full gas and returns a successful receipt.
+
+One consequence of widening detection needed closing. On the feed, a busy router
+with three hundred distinct callers looks exactly like a hot drop: same shape,
+same velocity, same crowd. So before anything is sent, the contract is asked
+over ERC-165 whether it is an ERC-721 or ERC-1155. If it answers no, that is a
+blocking rule — score zero, no partial credit. If it does not implement ERC-165
+at all (plenty of older collections don't), it has to at least expose the
+metadata and supply an NFT normally would.
+
 ### Accounts: ten wallets, generated for you
 
 Sign up and the server generates ten wallets, seals their keys, and mints from
@@ -374,6 +414,20 @@ Rules with no threshold behind them — sold out, sale closed, already held —
 score **zero** instead of partial credit. No adjustment makes an owned
 collection buyable, so it is not "close" to anything and never clutters the
 list.
+
+### One RPC, or your own
+
+There is a deployment-wide endpoint from `RPC_URLS`, and that is what everyone
+uses by default. An account can set its own, which is then **tried first** with
+the shared one kept as a fallback — it layers, it does not replace.
+
+Worth doing, because ordering here is first-come-first-served: the endpoint you
+submit through is the whole race, and an endpoint everyone shares is an endpoint
+nobody wins from. The Route screen measures both so the difference is a number
+rather than a hunch.
+
+Operators running on `PRIVATE_KEYS` change endpoints by redeploying; the
+per-account override is for signed-up users.
 
 ### Where your mints leave from
 
@@ -563,7 +617,7 @@ src/
   cli.ts         Command-line entry point
 api/             Vercel serverless routes
 public/index.html  The web UI
-test/            405 tests, incl. end-to-end runs against a mock node
+test/            457 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```

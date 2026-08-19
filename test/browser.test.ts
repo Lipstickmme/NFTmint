@@ -86,7 +86,9 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
     };
-    const signedIn = req.headers['x-account-id'] === ACCOUNT.id;
+    const asAccount = req.headers['x-account-id'] === ACCOUNT.id;
+    const asOperator = req.headers.authorization === 'Bearer operator-token-long-enough';
+    const signedIn = asAccount || asOperator;
 
     const readBody = async (): Promise<Record<string, unknown>> => {
       const chunks: Buffer[] = [];
@@ -98,9 +100,9 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        build: { uiVersion: '8-geist', commit: 'testing', deployedAt: 'local' },
+        build: { uiVersion: '9-replay', commit: 'testing', deployedAt: 'local' },
         configured: {
-          apiToken: true, privateKeys: false, rpcUrls: true, network: 'testnet',
+          apiToken: true, privateKeys: true, rpcUrls: true, network: 'testnet',
           spendCeilingEth: '0.05', upstreamTracker: false,
           accounts: true, accountsDurable: true, marketPrices: true,
         },
@@ -140,6 +142,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
         wallets: (account.addresses as string[]).map((address, i) => ({
           address, balanceEth: i < 3 ? '0.0100' : '0', funded: i < 3,
         })),
+        defaultRpcHost: 'rpc.testnet.default',
       });
     }
 
@@ -172,6 +175,18 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
           provider: 'Alchemy', region: 'US East', role: 'read', rttMs: 42 },
         summary: 'Mints leave through Alchemy in US East, 42ms away.',
         note: 'This is where your own transactions enter the chain.',
+      });
+    }
+
+    if (url.pathname === '/api/status') {
+      if (req.headers.authorization !== 'Bearer operator-token-long-enough') {
+        return json({ error: 'invalid token' }, 401);
+      }
+      return json({
+        network: 'testnet', chainId: 46630, observedChainId: 46630, blockNumber: '4242',
+        rpcEndpoints: [{ url: 'rpc.testnet', medianRttMs: 12 }],
+        wallets: [{ address: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', balanceEth: '0.5' }],
+        spendCeilingEth: '0.05',
       });
     }
 
@@ -479,6 +494,49 @@ describe.skipIf(!chromiumPath)('the app in a browser', () => {
       await page.waitForSelector('#app .card');
       expect((await page.textContent('#app'))?.length ?? 0).toBeGreaterThan(20);
     }
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+  it('signs the operator in, and changes the screen when it does', async () => {
+    // The failure this replaces: a correct token was accepted by the API but
+    // the screen kept offering sign-up, so it looked like nothing happened.
+    const { page, errors } = await openPage(false);
+    await page.click('#navAccount');
+    await page.click('summary:has-text("Run this as the operator")');
+    await page.fill('#opTok', 'operator-token-long-enough');
+    await page.click('#app >> button:has-text("Sign in") >> nth=1');
+
+    // Wait for the status to land, not just for the heading to switch.
+    await page.waitForFunction(
+      () => (document.getElementById('app')?.textContent ?? '').includes('Deployment'),
+      null, { timeout: 10_000 });
+
+    const shown = await page.textContent('#app');
+    expect(shown).toContain('Operator');
+    expect(shown).toContain('testnet');
+    expect(shown).toContain('4242');
+    expect(shown).not.toContain('Create 10 wallets');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('lets the operator reach the hunt screen', async () => {
+    const { page, errors } = await openPage(false);
+    await page.evaluate(() => localStorage.setItem('fm_optoken', 'operator-token-long-enough'));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('button:has-text("Start hunting")', { timeout: 10_000 });
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('names the shared endpoint when an account has not set its own', async () => {
+    const { page, errors } = await openPage();
+    await page.click('#navAccount');
+    await page.waitForSelector('#rpc', { timeout: 8000 });
+    expect(await page.textContent('#app')).toContain('rpc.testnet.default');
+    // The question this answers: "there is already an RPC, so why is it asking
+    // me for one?" — because the shared one is a default, not the only option.
+    expect(await page.textContent('#app')).toMatch(/shared endpoint/i);
     expect(errors).toEqual([]);
     await page.close();
   });

@@ -43,6 +43,15 @@ export interface Finding {
   outcome?: string;
   minted?: number;
   txUrls?: string[];
+  /**
+   * How the calldata was produced, once the chain accepted one.
+   *
+   * Worth keeping because "it minted" and "it minted by copying a stranger's
+   * transaction and swapping the recipient" are different amounts of comfort.
+   */
+  how?: string;
+  /** Whether the entrypoint was recognised, or learned from the crowd. */
+  entrypoint?: string;
 
   /**
    * What it turned out to be worth, filled in later from the configured
@@ -100,6 +109,8 @@ export function toFinding(candidate: Candidate, now = new Date()): Finding {
     outcome: minted?.error ?? (minted && minted.confirmed > 0 ? 'bought' : undefined),
     minted: minted?.confirmed,
     txUrls: minted?.txs?.map((t) => t.url),
+    how: minted?.how,
+    entrypoint: collection.entrypoint,
   };
 }
 
@@ -127,6 +138,7 @@ export function mergeFinding(existing: Finding, incoming: Finding): Finding {
     name: incoming.name ?? existing.name,
     // Price lookups happen on read, not during a round, so an incoming record
     // from a fresh sighting never carries one — keep whatever was found before.
+    how: incoming.how ?? existing.how,
     floor: incoming.floor ?? existing.floor,
     floorCurrency: incoming.floorCurrency ?? existing.floorCurrency,
     floorCheckedAt: incoming.floorCheckedAt ?? existing.floorCheckedAt,

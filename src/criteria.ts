@@ -290,6 +290,45 @@ export function evaluate(
   // non-standard ABI is common and should not by itself disqualify a mint.
   let projectedSelloutSec: number | undefined;
 
+  // Is this even an NFT?
+  //
+  // This became load-bearing when mint detection stopped requiring a hardcoded
+  // selector. On the feed, a busy router with three hundred distinct callers is
+  // indistinguishable from a hot drop — same shape, same velocity, same crowd.
+  // The only thing that tells them apart is asking the contract, and getting it
+  // wrong means sending copied calldata to something that is not a mint at all.
+  if (info) {
+    if (info.isNft !== undefined) {
+      checks.push({
+        name: 'is an NFT',
+        passed: info.isNft,
+        actual: info.isNft ? 'ERC-721 or ERC-1155' : 'neither, by its own answer',
+        required: 'ERC-721 or ERC-1155',
+        why: 'The contract was asked directly, over ERC-165.',
+        score: info.isNft ? 1 : 0,
+        weight: 4,
+        blocking: true,
+      });
+    } else {
+      // No ERC-165. Fall back to the shape of what it exposes, which is weaker
+      // but still separates a collection from a pool.
+      checks.push({
+        name: 'is an NFT',
+        passed: info.looksLikeNft,
+        actual: info.looksLikeNft
+          ? 'no ERC-165, but has a name and a supply'
+          : 'no ERC-165, no name or supply either',
+        required: 'looks like a collection',
+        why:
+          'This contract does not answer ERC-165, so it was judged on whether it ' +
+          'exposes the metadata and supply an NFT normally would.',
+        score: info.looksLikeNft ? 1 : 0,
+        weight: 4,
+        blocking: true,
+      });
+    }
+  }
+
   if (info?.soldOut) {
     checks.push({
       name: 'not sold out',

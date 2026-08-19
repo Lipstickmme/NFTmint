@@ -138,6 +138,84 @@ The request body can only override an allowlisted set of mint fields
 `PRIVATE_KEYS`, `RPC_URLS`, or `MAX_MINT_VALUE_ETH` — those come from the
 environment only, and there's a test asserting exactly that.
 
+### What holds, and what does not
+
+The checklist below is the current state, including the parts that are only
+partly closed. Each line has tests behind it.
+
+**Keys**
+
+- Generated private keys are sealed with AES-256-GCM under `ACCOUNT_ENCRYPTION_KEY`
+  and never written in the clear. A test reads the file back and asserts nothing
+  key-shaped appears in it.
+- Nothing passes a key to a logger, and no response carries one except
+  `?reveal=1`, which is a separate request that the page never makes on load.
+- The API view of an account cannot carry a sealed blob or the token hash —
+  asserted directly.
+- Every revealed key derives the address it was stored under, so a wallet can
+  never be shown that nobody can spend from.
+
+**Credentials**
+
+- The account key is stored as a SHA-256 hash, compared in constant time. A
+  database dump cannot be replayed against the API.
+- A missing account and a wrong key return the identical message, so account ids
+  cannot be enumerated.
+- Credentials travel in headers, never the query string, so they stay out of
+  access logs.
+- There is no reset path. Losing the key loses the account — by design, because
+  a recovery channel is a second way in.
+
+**Money**
+
+- `MAX_MINT_VALUE_ETH` is enforced server-side and no request can widen it.
+- The value attached to a mint is clamped to the price ceiling *independently*
+  of the criteria check that already rejects an over-priced collection.
+  `observedValueWei` is an average of numbers an attacker can inflate by
+  spamming a contract, so it gets two independent bounds rather than one.
+- Auto-mint sends zero value by default (`HUNT_FREE_ONLY=true`).
+
+**The endpoint an account supplies**
+
+- Rejected if it is not http(s), if the host is loopback/private/link-local, or
+  if it resolves to any of those. `169.254.169.254` — the cloud metadata
+  service — and IPv4-mapped IPv6 forms of it are both covered.
+- **Residual risk, stated plainly:** the check happens when the URL is saved.
+  DNS can change afterwards, so a host that is *actively* rebinding can still
+  get through. Closing that fully needs an IP check at socket-connect time on
+  every call. What the current check buys is that pointing a domain at something
+  private is not enough on its own.
+
+**The browser**
+
+- Every value from the chain or the API is escaped before it reaches the DOM,
+  and a test drives a hostile `javascript:` URL through the artwork field to
+  prove it.
+- URLs are scheme-checked as well as escaped, because escaping alone does not
+  stop `javascript:` in an `href`.
+- A CSP is set: `default-src 'none'`, no external scripts, `connect-src 'self'`.
+  **`script-src` still allows `'unsafe-inline'`**, because the app is a single
+  inline script and static headers cannot carry a per-request nonce. Escaping is
+  the actual defence there; the CSP narrows everything else around it.
+
+**Rate limits**
+
+- Sign-up is 3/hour per caller; minting and hunting have their own buckets.
+- **These depend on a trusted proxy.** The caller's IP comes from
+  `x-real-ip` / `x-vercel-forwarded-for` first (Vercel sets these and a client
+  cannot forge them) and `x-forwarded-for` last. Behind no proxy at all — a bare
+  `npm run serve` — all of those are client-supplied and the limit becomes a
+  courtesy. The hard bound stays `MAX_MINT_VALUE_ETH`.
+- Buckets are per-process, so on serverless each instance keeps its own. A speed
+  bump, not a distributed guarantee.
+
+**Not addressed**
+
+- Anyone who can create accounts can create many. Each is a couple of KB, so
+  this is a storage-growth nuisance rather than a compromise, but there is no
+  global cap.
+- The deployment is custodial. No amount of the above changes that.
+
 ---
 
 ## Continuous hunting

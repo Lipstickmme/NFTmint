@@ -57,17 +57,48 @@ describe('classifyMint', () => {
     );
   });
 
-  it('honours extra selectors registered by the operator', () => {
+  it('watches an unrecognised entrypoint instead of discarding it', () => {
+    // The old behaviour — discard anything not on a hardcoded list — is why
+    // most real collections were never seen at all. An unknown selector is now
+    // a maybe: tracked, but marked so the tracker knows to make it earn
+    // attention before spending anything on it.
     const custom = '0xdeadbeef' as Hex;
-    expect(classifyMint({ to: CONTRACT_A, selector: custom, value: 0n, data: '0x' }).isMint).toBe(
-      false,
-    );
+    const result = classifyMint({ to: CONTRACT_A, selector: custom, value: 0n, data: '0x' });
+    expect(result.isMint).toBe(true);
+    expect(result.confidence).toBe('observed');
+  });
+
+  it('trusts a recognised entrypoint immediately', () => {
+    const result = classifyMint({
+      to: CONTRACT_A, selector: selectorOf('mint(uint256)'), value: 0n, data: '0x',
+    });
+    expect(result.confidence).toBe('known');
+  });
+
+  it('promotes a selector the operator registered', () => {
+    const custom = '0xdeadbeef' as Hex;
     expect(
       classifyMint(
         { to: CONTRACT_A, selector: custom, value: 0n, data: '0x' },
         new Set([custom]),
-      ).isMint,
-    ).toBe(true);
+      ).confidence,
+    ).toBe('known');
+  });
+
+  it('discards the traffic that is definitely not a mint', () => {
+    // Widening detection would otherwise mean tracking every transfer and swap
+    // on the chain, which is most of it.
+    for (const sig of [
+      'transfer(address,uint256)',
+      'approve(address,uint256)',
+      'setApprovalForAll(address,bool)',
+      'swapExactETHForTokens(uint256,address[],address,uint256)',
+    ]) {
+      expect(
+        classifyMint({ to: CONTRACT_A, selector: selectorOf(sig), value: 0n, data: '0x' }).isMint,
+        sig,
+      ).toBe(false);
+    }
   });
 
   it('covers the common mint entrypoints', () => {
@@ -90,6 +121,63 @@ describe('parseExtraSelectors', () => {
 
   it('rejects garbage rather than silently ignoring it', () => {
     expect(() => parseExtraSelectors('nonsense')).toThrow(/neither a 4-byte selector/);
+  });
+});
+
+describe('MintTracker promotion', () => {
+  const UNKNOWN = '0xdeadbeef' as Hex;
+  const unknownTx = (over: Partial<FeedTx> = {}): FeedTx =>
+    tx({ selector: UNKNOWN, data: `${UNKNOWN}${'01'.padStart(64, '0')}` as Hex, ...over });
+
+  it('counts an unrecognised entrypoint without paying for it', () => {
+    // Tracking every contract call is only affordable because the expensive
+    // half — samples, sender recovery, a snapshot row — waits for evidence.
+    const tracker = new MintTracker({ promoteAfter: 4, minAttempts: 1000 });
+    for (let i = 0; i < 3; i++) tracker.ingest(unknownTx());
+
+    const stats = tracker.get(CONTRACT_A)!;
+    expect(stats.attempts).toBe(3);
+    expect(stats.promoted).toBe(false);
+    expect(stats.sampleCalldata.size).toBe(0);
+    // Nothing to score yet, so nothing in the snapshot.
+    expect(tracker.snapshot()).toEqual([]);
+  });
+
+  it('promotes it once enough people have called it', () => {
+    const tracker = new MintTracker({ promoteAfter: 4, minAttempts: 1000 });
+    for (let i = 0; i < 5; i++) tracker.ingest(unknownTx());
+
+    const stats = tracker.get(CONTRACT_A)!;
+    expect(stats.promoted).toBe(true);
+    expect(stats.sampleCalldata.get(UNKNOWN)).toBeDefined();
+    expect(tracker.snapshot()).toHaveLength(1);
+    expect(tracker.snapshot()[0].entrypoint).toBe('observed');
+  });
+
+  it('promotes a recognised entrypoint on its first sighting', () => {
+    // No reason to make a known mint selector earn what it already proves.
+    const tracker = new MintTracker({ promoteAfter: 99, minAttempts: 1000 });
+    tracker.ingest(tx());
+
+    expect(tracker.get(CONTRACT_A)?.promoted).toBe(true);
+    expect(tracker.snapshot()[0].entrypoint).toBe('known');
+  });
+
+  it('keeps the signed transaction behind each sample', () => {
+    // Without it the sample's sender cannot be recovered, and the ABI-free
+    // address swap has nothing to look for.
+    const tracker = new MintTracker({ minAttempts: 1000 });
+    tracker.ingest(tx({ raw: '0x02f8aabbcc' as Hex }));
+    expect(tracker.snapshot()[0].sampleRaw).toBe('0x02f8aabbcc');
+  });
+
+  it('reports watched and tracked contracts separately', () => {
+    const tracker = new MintTracker({ promoteAfter: 4, minAttempts: 1000 });
+    tracker.ingest(tx());                                  // known → tracked
+    for (let i = 0; i < 2; i++) tracker.ingest(unknownTx({ to: CONTRACT_B })); // watched
+
+    expect(tracker.stats().contractsTracked).toBe(1);
+    expect(tracker.stats().contractsWatched).toBe(1);
   });
 });
 

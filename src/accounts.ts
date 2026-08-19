@@ -1,4 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import type { Address, Hex } from 'viem';
 
@@ -209,25 +211,95 @@ export function normalizeRpcUrl(input: string): string {
     throw new AccountError('An RPC URL must start with https:// (or http:// for a local node).');
   }
 
-  const host = url.hostname.toLowerCase();
-  const blocked =
-    host === 'localhost' ||
-    host === '::1' ||
-    host.endsWith('.localhost') ||
-    host.endsWith('.internal') ||
-    host === 'metadata.google.internal' ||
-    /^127\./.test(host) ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^169\.254\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    /^0\./.test(host);
-
-  if (blocked) {
-    throw new AccountError(
-      'That address is on a private or loopback network, which the server will not ' +
-        'call on your behalf. Use a public RPC endpoint.',
-    );
+  const host = hostnameOf(url);
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) {
+    throw new AccountError(PRIVATE_HOST_MESSAGE);
+  }
+  if (isIP(host) && isPrivateAddress(host)) {
+    throw new AccountError(PRIVATE_HOST_MESSAGE);
   }
   return url.toString();
+}
+
+/**
+ * The hostname, with IPv6 brackets removed.
+ *
+ * `new URL('http://[::1]/').hostname` keeps the brackets, and `isIP('[::1]')`
+ * is false — so without this, the loopback address spelled in IPv6 walks
+ * straight through the check that exists to stop it.
+ */
+function hostnameOf(url: URL): string {
+  return url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+}
+
+const PRIVATE_HOST_MESSAGE =
+  'That address is on a private or loopback network, which the server will not call ' +
+  'on your behalf. Use a public RPC endpoint.';
+
+/** Ranges that must never be reachable through a user-supplied URL. */
+export function isPrivateAddress(ip: string): boolean {
+  const v = ip.toLowerCase().replace(/^\[|\]$/g, '');
+
+  // IPv6 loopback, link-local, and unique-local.
+  if (v === '::' || v === '::1') return true;
+  if (v.startsWith('fe80:') || v.startsWith('fc') || v.startsWith('fd')) return true;
+  // IPv4-mapped IPv6 (::ffff:169.254.169.254) tunnels straight past a v4 check.
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v);
+  if (mapped) return isPrivateAddress(mapped[1]);
+
+  const parts = v.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+    return false;
+  }
+  const [a, b] = parts;
+  return (
+    a === 0 ||
+    a === 127 ||
+    a === 10 ||
+    (a === 169 && b === 254) || // cloud metadata lives here
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127) || // carrier-grade NAT
+    a >= 224 // multicast and reserved
+  );
+}
+
+/**
+ * Resolve the host and reject it if it points anywhere private.
+ *
+ * The string check above stops `http://10.0.0.1`, but not `evil.com` with an A
+ * record pointing at the cloud metadata service — the server would resolve it
+ * at request time and happily fetch it. This closes that.
+ *
+ * Be clear about what it does not close: DNS can change between this check and
+ * the request that uses the URL, so a determined rebinding attack survives it.
+ * Fully closing that needs an IP check at socket-connect time on every call.
+ * What this does buy is that a host has to be *actively* rebinding rather than
+ * simply pointing somewhere private, and it costs one lookup per save.
+ */
+export async function assertPublicHost(rpcUrl: string): Promise<void> {
+  if (rpcUrl === '') return;
+  let host: string;
+  try {
+    host = hostnameOf(new URL(rpcUrl));
+  } catch {
+    throw new AccountError(`"${rpcUrl}" is not a valid URL.`);
+  }
+  if (isIP(host)) {
+    if (isPrivateAddress(host)) throw new AccountError(PRIVATE_HOST_MESSAGE);
+    return;
+  }
+
+  let addresses: Array<{ address: string }>;
+  try {
+    addresses = await lookup(host, { all: true });
+  } catch {
+    throw new AccountError(
+      `Could not resolve "${host}". Check the address, or try again in a moment.`,
+    );
+  }
+  // Every answer has to be public: one private record is enough to abuse.
+  if (addresses.some((a) => isPrivateAddress(a.address))) {
+    throw new AccountError(PRIVATE_HOST_MESSAGE);
+  }
 }

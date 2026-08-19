@@ -121,6 +121,8 @@ async function startMockNode(state: ContractState): Promise<MockNode> {
     [selectorOf('price()'), '0x' + word(0n)],
     [selectorOf('saleIsActive()'), '0x' + word(state.saleOpen ? 1n : 0n)],
     [selectorOf('balanceOf(address)'), '0x' + word(state.ownedByBot)],
+    // ERC-165: yes, this is an ERC-721.
+    [selectorOf('supportsInterface(bytes4)'), '0x' + word(1n)],
   ]);
 
   const server = http.createServer((req, res) => {

@@ -188,12 +188,12 @@
 
 <script>
 'use strict';
-var PAGE_VERSION = '8-geist';
+var PAGE_VERSION = '9-replay';
 
 /* ── state ──────────────────────────────────────────────────────────────── */
 var view='mints', tab='passed', hunting=false, rounds=0, selected=null;
 var hist=null, origin=null, acctView=null, revealed=null, defaults=null, health=null;
-var seenArt=[], logLines=[], busyLabel='', signupNotice=null;
+var seenArt=[], logLines=[], busyLabel='', signupNotice=null, statusInfo=null;
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
 function $(id){ return document.getElementById(id); }
@@ -220,7 +220,18 @@ function setAcct(a){ if(a) localStorage.setItem('fm_account',JSON.stringify(a));
 function opTok(){ return localStorage.getItem('fm_optoken')||''; }
 function setOpTok(t){ if(t) localStorage.setItem('fm_optoken',t);
   else localStorage.removeItem('fm_optoken'); }
-function signedIn(){ var a=acct(); return Boolean((a&&a.id&&a.token)||opTok()); }
+function signedIn(){ return mode()!=='out'; }
+/**
+ * Who is driving.
+ *
+ * 'account'  — a signed-up user, minting from generated wallets.
+ * 'operator' — the deployment's own API_TOKEN and PRIVATE_KEYS.
+ * Both reach the same screens; only the wallets and the history differ.
+ */
+function mode(){ var a=acct();
+  if(a&&a.id&&a.token) return 'account';
+  if(opTok()) return 'operator';
+  return 'out'; }
 
 async function api(path,opt){
   opt=opt||{};
@@ -282,8 +293,15 @@ async function loadOrigin(){
 }
 
 async function loadAccount(){
-  var a=acct();
-  if(!a||!a.id){ acctView=null; render(); return; }
+  var m=mode();
+  if(m==='out'){ acctView=null; statusInfo=null; render(); return; }
+  if(m==='operator'){
+    // The operator has no generated wallets; /api/status describes the ones
+    // the deployment was configured with instead.
+    try{ statusInfo=await api('/api/status'); }
+    catch(e){ statusInfo={error:e.message}; }
+    render(); return;
+  }
   try{ acctView=await api('/api/account'); }
   catch(e){ acctView={error:e.message}; }
   render();
@@ -598,6 +616,15 @@ function renderDetail(){
     out.push('<div class="hint">Short on <b>'+esc(f.failedChecks.join(', '))+'</b>. '+
       'The first one listed is furthest from passing, so it is the dial to loosen.</div>');
 
+  // How the calldata was built. A mint that worked by copying a stranger's
+  // transaction is a different kind of confidence from one that decoded a
+  // known signature, and the difference is worth stating rather than hiding.
+  if(f.how) out.push('<div class="hint"><b>How:</b> '+esc(f.how)+'</div>');
+  if(f.entrypoint==='observed') out.push('<div class="hint">This collection uses an '+
+    'entrypoint we do not recognise. It was found because a crowd of distinct wallets '+
+    'kept calling it, and the call was verified against the contract before anything '+
+    'was sent.</div>');
+
   out.push('<div class="bar"><div style="width:'+
     Math.max(0,Math.min(100,Number(f.score)||0))+'%"></div></div>');
   out.push('<div class="hint">First seen '+esc(fmtTime(f.firstSeenAt))+
@@ -699,43 +726,116 @@ function renderOrigin(){
 
 /* ── screen: account ────────────────────────────────────────────────────── */
 function renderAccount(){
-  var a=acct(), out=[];
+  var m=mode();
+  if(m==='operator') return renderOperator();
+  if(m==='account')  return renderUserAccount();
 
-  if(!a||!a.id){
-    out.push('<div class="card">');
-    out.push('<div class="top"><div class="thumbs"></div></div>');
-    out.push('<h1>Your wallets</h1>');
-    out.push('<p class="lede">One tap generates ten wallets. The bot mints from all of them '+
-      'at once, so a one-per-wallet drop gets you ten.</p>');
-    out.push('<div class="acts"><button class="solid wide" onclick="signUp()"'+
-      (busyLabel?' disabled':'')+'>'+
-      (busyLabel? '<span class="spin"></span> '+esc(busyLabel) : 'Create 10 wallets')+
-      '</button></div>');
-    out.push('<div class="hint"><b>Read this first.</b> The server holds these keys so it '+
-      'can mint while you are away — that means whoever runs the server can spend them. '+
-      'Fund them with gas money and nothing more, and treat them as burners.</div>');
-    if(signupNotice&&signupNotice.error) out.push(msg('err',esc(signupNotice.error)));
-    out.push(setupWarning());
-    out.push('</div>');
+  var out=['<div class="card">'];
+  out.push('<div class="top"><div class="thumbs"></div></div>');
+  out.push('<h1>Your wallets</h1>');
+  out.push('<p class="lede">One tap generates ten wallets. The bot mints from all of them '+
+    'at once, so a one-per-wallet drop gets you ten.</p>');
+  out.push('<div class="acts"><button class="solid wide" onclick="signUp()"'+
+    (busyLabel?' disabled':'')+'>'+
+    (busyLabel? '<span class="spin"></span> '+esc(busyLabel) : 'Create 10 wallets')+
+    '</button></div>');
+  out.push('<div class="hint"><b>Read this first.</b> The server holds these keys so it '+
+    'can mint while you are away — that means whoever runs the server can spend them. '+
+    'Fund them with gas money and nothing more, and treat them as burners.</div>');
+  if(signupNotice&&signupNotice.error) out.push(msg('err',esc(signupNotice.error)));
+  out.push(setupWarning());
+  out.push('</div>');
 
-    out.push('<details class="card flat"><summary>I have an account key</summary>');
-    out.push('<div style="margin-top:14px"><label for="inId">Account id</label>'+
-      '<input id="inId" spellcheck="false" placeholder="e.g. k7m2qphx4t"></div>');
-    out.push('<div style="margin-top:12px"><label for="inTok">Account key</label>'+
-      '<input id="inTok" type="password" autocomplete="off" placeholder="paste key"></div>');
-    out.push('<div class="acts"><button class="solid" onclick="signIn()">Sign in</button></div>');
-    out.push('</details>');
+  out.push('<details class="card flat"><summary>I have an account key</summary>');
+  out.push('<div style="margin-top:14px"><label for="inId">Account id</label>'+
+    '<input id="inId" spellcheck="false" placeholder="e.g. k7m2qphx4t"></div>');
+  out.push('<div style="margin-top:12px"><label for="inTok">Account key</label>'+
+    '<input id="inTok" type="password" autocomplete="off" placeholder="paste key"></div>');
+  out.push('<div class="acts"><button class="solid" onclick="signIn()">Sign in</button></div>');
+  out.push('</details>');
 
-    out.push('<details class="card flat"><summary>Run this as the operator instead</summary>'+
-      '<p class="hint">Uses the deployment\'s own PRIVATE_KEYS rather than generated wallets. '+
-      'Paste the API_TOKEN from your environment variables.</p>'+
-      '<div style="margin-top:12px"><label for="opTok">API token</label>'+
-      '<input id="opTok" type="password" autocomplete="off" placeholder="paste token"></div>'+
-      '<div class="acts"><button class="solid" onclick="saveOpToken()">Save</button></div>'+
-      '</details>');
-    return out.join('');
+  out.push('<details class="card flat"><summary>Run this as the operator instead</summary>'+
+    '<p class="hint">Mints from the deployment\'s own PRIVATE_KEYS rather than generated '+
+    'wallets, over the RPC_URLS you configured. Paste the API_TOKEN from your environment '+
+    'variables.</p>'+
+    '<div style="margin-top:12px"><label for="opTok">API token</label>'+
+    '<input id="opTok" type="password" autocomplete="off" placeholder="paste token"></div>'+
+    '<div class="acts"><button class="solid" onclick="saveOpToken()">Sign in</button></div>'+
+    '</details>');
+  return out.join('');
+}
+
+/* The operator runs on configured keys, so there is nothing to generate or
+   reveal — only what the deployment already has. */
+function renderOperator(){
+  var s=statusInfo||{}, out=['<div class="card">'];
+  out.push('<div class="top"><div><div class="k">Signed in as</div>'+
+    '<h1 style="margin-top:4px">Operator</h1></div>'+
+    '<button class="circ" onclick="signOutOperator()" title="Sign out">⏻</button></div>');
+
+  // The common case is not a bad token: it is an operator sign-in on a
+  // deployment set up for accounts, which has no PRIVATE_KEYS at all. Saying
+  // "your token is wrong" there would send someone hunting the wrong problem.
+  var noKeys = health && health.configured && health.configured.privateKeys===false;
+  if(s.error && noKeys){
+    out.push(msg('warn','<b>No operator wallets on this deployment.</b><br>'+
+      'PRIVATE_KEYS is not set, so there is nothing for the operator to mint from.'));
+    out.push('<div class="hint">Either set PRIVATE_KEYS in your environment and redeploy, '+
+      'or sign out and create an account — that generates ten wallets for you and needs no '+
+      'environment variable beyond ACCOUNT_ENCRYPTION_KEY.</div>');
+    out.push('<div class="acts"><button class="solid" onclick="signOutOperator()">'+
+      'Use a generated account</button></div>');
+    out.push('</div>'); return out.join('');
   }
+  if(s.error){ out.push(msg('err',esc(s.error)));
+    out.push('<div class="hint">If that says the token is invalid, clear it and paste '+
+      'the API_TOKEN from your environment variables again.</div>');
+    out.push('<div class="acts"><button onclick="signOutOperator()">Clear token</button></div>');
+    out.push('</div>'); return out.join(''); }
 
+  if(!s.wallets){ out.push('<p class="lede">Loading…</p></div>'); return out.join(''); }
+
+  var total=0, funded=0;
+  for(var i=0;i<s.wallets.length;i++){
+    var b=Number(s.wallets[i].balanceEth);
+    if(isFinite(b)){ total+=b; if(b>0) funded++; }
+  }
+  out.push('<div style="display:flex;align-items:baseline;gap:12px;margin:8px 0 4px">'+
+    num(total.toFixed(4),'xl')+'<div class="num m mute">ETH</div></div>');
+  out.push('<div class="k">'+esc(funded)+' of '+esc(s.wallets.length)+
+    ' configured wallets funded</div>');
+  out.push('<div class="hint">These come from PRIVATE_KEYS in your environment. To mint '+
+    'from generated wallets instead, sign out and create an account.</div>');
+  out.push('</div>');
+
+  out.push('<div class="card flat"><div class="k">Deployment</div><div style="margin-top:12px">');
+  out.push(plainRow('network', esc(s.network)+' · chain '+esc(s.chainId)));
+  out.push(plainRow('block', esc(s.blockNumber||'—')));
+  out.push(plainRow('spend cap', esc(s.spendCeilingEth)+' ETH'));
+  for(var e=0;e<((s.rpcEndpoints)||[]).length;e++)
+    out.push(plainRow('rpc', esc(s.rpcEndpoints[e].url),
+      s.rpcEndpoints[e].medianRttMs!==undefined? esc(s.rpcEndpoints[e].medianRttMs)+' ms':''));
+  out.push('</div>');
+  out.push('<div class="hint">Operator endpoints come from RPC_URLS and are changed by '+
+    'redeploying, not from this screen. Accounts can point themselves somewhere else.</div>');
+  out.push('<div class="acts"><button class="link" onclick="go(\'origin\')">'+
+    'see how fast they are</button></div>');
+  out.push('</div>');
+
+  if(s.observedChainId && s.observedChainId!==s.chainId)
+    out.push('<div class="card flat">'+msg('err','Wrong network — the RPC reports chain '+
+      esc(s.observedChainId)+', but NETWORK says '+esc(s.chainId)+'.')+'</div>');
+  return out.join('');
+}
+
+function plainRow(k,v,right){
+  return '<div class="row static"><div class="grow"><div class="k">'+esc(k)+'</div>'+
+    '<div class="name">'+v+'</div></div>'+
+    (right? '<div class="right"><div class="num m">'+right+'</div></div>':'')+'</div>';
+}
+
+function renderUserAccount(){
+  var a=acct(), out=[];
   out.push('<div class="card">');
   out.push('<div class="top"><div><div class="k">Account</div>'+
     '<h1 style="margin-top:4px" class="mono">'+esc(a.id)+'</h1></div>'+
@@ -768,7 +868,6 @@ function renderAccount(){
     '<button onclick="revealKeys()">Show private keys</button></div>');
   out.push('</div>');
 
-  /* Wallets */
   out.push('<div class="card flat"><div class="k">Wallets</div><div style="margin-top:12px">');
   var ws=(acctView&&acctView.wallets)||[];
   if(!ws.length && acctView && acctView.addresses)
@@ -798,22 +897,30 @@ function renderAccount(){
     out.push('</div>');
   }
 
-  /* Own RPC */
+  /* Your own endpoint, layered over the shared one rather than replacing it. */
+  var mine=(acctView&&acctView.rpcUrl)||'', shared=(acctView&&acctView.defaultRpcHost)||'';
   out.push('<div class="card flat"><div class="k">Your RPC</div>');
-  out.push('<p class="lede">Mints leave through the fastest endpoint available. Ordering here '+
-    'is first-come-first-served, so a nearer endpoint is the only thing that wins races.</p>');
+  out.push('<p class="lede">'+(mine
+    ? 'Yours is tried first; the shared endpoint stays as the fallback.'
+    : 'You are on the shared endpoint'+(shared? ' — <span class="mono">'+esc(shared)+'</span>':'')+
+      '. Set your own to have it tried first.')+'</p>');
+  out.push('<div class="hint">Ordering on this chain is first-come-first-served, so a nearer '+
+    'endpoint is the only thing that wins races. Everyone here shares one by default; your own '+
+    'is the way past that.</div>');
   out.push('<div style="margin-top:14px"><label for="rpc">RPC URL</label>'+
-    '<input id="rpc" spellcheck="false" placeholder="https://…" value="'+
-    esc((acctView&&acctView.rpcUrl)||'')+'"></div>');
+    '<input id="rpc" spellcheck="false" placeholder="'+
+    (shared? 'shared: '+esc(shared) : 'https://…')+'" value="'+esc(mine)+'"></div>');
   out.push('<div class="acts"><button class="solid" onclick="saveRpc()"'+(busyLabel?' disabled':'')+
     '>Save</button>'+
+    (mine? '<button onclick="clearRpc()">Use the shared one</button>':'')+
     '<button class="link" onclick="go(\'origin\')">see how fast it is</button></div>');
-  out.push('<div class="hint">Leave empty to use the deployment\'s own endpoint.</div>');
   out.push('</div>');
   return out.join('');
 }
 
 function hideKeys(){ revealed=null; render(); }
+
+async function clearRpc(){ $('rpc').value=''; await saveRpc(); }
 
 function signIn(){
   var id=$('inId').value.trim(), tok=$('inTok').value.trim();
@@ -822,7 +929,17 @@ function signIn(){
   loadAccount(); loadFindings();
 }
 
-function saveOpToken(){ setOpTok($('opTok').value.trim()); loadStatus(); loadFindings(); render(); }
+function saveOpToken(){
+  var t=$('opTok').value.trim();
+  if(!t) return;
+  setOpTok(t);
+  // The screen has to change on save, or a correct token looks like it did
+  // nothing — which is exactly how this read before.
+  log('Signed in as the operator.');
+  loadAccount(); loadFindings(); render();
+}
+
+function signOutOperator(){ setOpTok(''); statusInfo=null; hist=null; render(); }
 
 /* ── screen: rules ──────────────────────────────────────────────────────── */
 function renderRules(){

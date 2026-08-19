@@ -7,6 +7,8 @@ import {
   createAccount,
   encryptionKey,
   hashToken,
+  assertPublicHost,
+  isPrivateAddress,
   normalizeRpcUrl,
   privateKeysOf,
   seal,
@@ -161,9 +163,48 @@ describe('createAccount', () => {
   });
 });
 
+describe('isPrivateAddress', () => {
+  for (const ip of [
+    '127.0.0.1', '10.0.0.5', '192.168.1.1', '172.16.0.1', '172.31.255.255',
+    '169.254.169.254', '0.0.0.0', '100.64.0.1', '::1', 'fe80::1', 'fd00::1',
+    // IPv4-mapped IPv6 would tunnel straight past a v4-only check.
+    '::ffff:169.254.169.254',
+  ]) {
+    it(`rejects ${ip}`, () => expect(isPrivateAddress(ip)).toBe(true));
+  }
+
+  for (const ip of ['1.1.1.1', '8.8.8.8', '203.0.113.5', '2606:4700::1111']) {
+    it(`allows ${ip}`, () => expect(isPrivateAddress(ip)).toBe(false));
+  }
+});
+
+describe('assertPublicHost', () => {
+  it('allows a public IP literal without a lookup', async () => {
+    await expect(assertPublicHost('https://1.1.1.1/rpc')).resolves.toBeUndefined();
+  });
+
+  it('rejects a private IP literal', async () => {
+    await expect(assertPublicHost('http://169.254.169.254/latest')).rejects.toThrow(/private/);
+  });
+
+  it('rejects a hostname that resolves somewhere private', async () => {
+    // The string check cannot see this: `localhost` is a name, and a real
+    // attacker would use their own domain pointing at the metadata service.
+    await expect(assertPublicHost('http://localhost:8545')).rejects.toThrow(/private/);
+  });
+
+  it('treats an unresolvable host as a refusal, not a pass', async () => {
+    await expect(assertPublicHost('https://no-such-host.invalid/rpc')).rejects.toThrow();
+  });
+
+  it('accepts an empty value, which clears the setting', async () => {
+    await expect(assertPublicHost('')).resolves.toBeUndefined();
+  });
+});
+
 describe('normalizeRpcUrl', () => {
   it('accepts a public https endpoint', () => {
-    expect(normalizeRpcUrl(' https://rpc.example.com/v2/key ')).toBe('https://rpc.example.com/v2/key');
+    expect(normalizeRpcUrl(' https://1.1.1.1/v2/key ')).toBe('https://1.1.1.1/v2/key');
   });
 
   it('treats empty as clearing the setting', () => {
@@ -186,6 +227,7 @@ describe('normalizeRpcUrl', () => {
     'http://172.16.0.1',
     'http://169.254.169.254/latest/meta-data',
     'http://metadata.google.internal',
+    'http://[::1]:8545',
   ]) {
     it(`refuses ${host}`, () => {
       // The server fetches whatever goes in here, so without this an account
@@ -385,8 +427,9 @@ describe('/api/account', () => {
       'x-account-token': String(created.body.token),
     };
 
-    const ok = await call({ method: 'PATCH', headers, body: { rpcUrl: 'https://rpc.example.com/x' } });
-    expect(ok.body.rpcUrl).toBe('https://rpc.example.com/x');
+    // An IP literal keeps the test hermetic: no DNS, same code path.
+    const ok = await call({ method: 'PATCH', headers, body: { rpcUrl: 'https://1.1.1.1/x' } });
+    expect(ok.body.rpcUrl).toBe('https://1.1.1.1/x');
 
     const bad = await call({
       method: 'PATCH', headers, body: { rpcUrl: 'http://169.254.169.254/latest/meta-data' },
@@ -395,7 +438,7 @@ describe('/api/account', () => {
     expect(String(bad.body.error)).toMatch(/private or loopback/);
 
     // The refused value must not have overwritten the good one.
-    expect((await call({ headers })).body.rpcUrl).toBe('https://rpc.example.com/x');
+    expect((await call({ headers })).body.rpcUrl).toBe('https://1.1.1.1/x');
   });
 
   it('turns auto-mint off and on', async () => {
@@ -407,6 +450,38 @@ describe('/api/account', () => {
     expect((await call({ method: 'PATCH', headers, body: { autoMint: false } })).body.autoMint)
       .toBe(false);
     expect((await call({ headers })).body.autoMint).toBe(false);
+  });
+
+  it('keeps one account\'s history out of another\'s', async () => {
+    // What the chain was doing is shared. Which wallets tried, and which
+    // transactions landed, is not.
+    const { recordFinding, getStore } = await import('../src/store.js');
+    const a = await call({ method: 'POST' });
+    const b = await call({ method: 'POST' });
+
+    await recordFinding({
+      contract: '0x00000000000000000000000000000000000000aa',
+      firstSeenAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
+      timesSeen: 1, mintsPerMinute: 10, uniqueMinters: 5, isFree: true,
+      passed: true, score: 100, failedChecks: [], reason: 'qualified',
+      txUrls: ['https://explorer/tx/0xsecret'],
+    }, process.env, String(a.body.id));
+
+    expect(await getStore(process.env, String(a.body.id)).list()).toHaveLength(1);
+    expect(await getStore(process.env, String(b.body.id)).list()).toEqual([]);
+  });
+
+  it('never returns a sealed blob or a token hash', async () => {
+    const created = await call({ method: 'POST' });
+    const headers = {
+      'x-account-id': String(created.body.id),
+      'x-account-token': String(created.body.token),
+    };
+    for (const res of [await call({ headers }), await call({ headers, url: '/api/account?reveal=1' })]) {
+      const dump = JSON.stringify(res.body);
+      expect(dump).not.toContain('sealed');
+      expect(dump).not.toContain('tokenHash');
+    }
   });
 
   it('refuses a method that is none of those things', async () => {

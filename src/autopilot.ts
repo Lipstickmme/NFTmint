@@ -240,7 +240,7 @@ export class Autopilot {
     log.info('AUTOPILOT MINTING', {
       contract,
       signature: call.signature,
-      verbatimCalldata: call.verbatim,
+      strategy: call.strategy,
       wallets: this.wallets.length,
       txPerWallet: this.config.txPerWallet,
       valueWei: value,

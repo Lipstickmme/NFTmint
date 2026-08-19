@@ -42,6 +42,14 @@ export interface TrackerConfig {
   maxContracts: number;
   /** Drop a contract that has seen no activity for this long. */
   evictAfterSec: number;
+  /**
+   * Calls needed before an unrecognised entrypoint is tracked in full.
+   *
+   * Recognised mint selectors skip this. Everything else is held in a cheap
+   * counting state first, so widening detection past a hardcoded list does not
+   * mean paying for sender recovery on every transfer on the chain.
+   */
+  promoteAfter: number;
 }
 
 export const DEFAULT_TRACKER_CONFIG: TrackerConfig = {
@@ -53,6 +61,7 @@ export const DEFAULT_TRACKER_CONFIG: TrackerConfig = {
   trackUniqueMinters: true,
   maxContracts: 5_000,
   evictAfterSec: 3_600,
+  promoteAfter: 6,
 };
 
 interface Sample {
@@ -80,9 +89,26 @@ export interface ContractStats {
    * takes a recipient address — see `buildAutoMintCall`.
    */
   sampleCalldata: Map<Hex, Hex>;
+  /**
+   * The signed transaction each sample came from.
+   *
+   * Kept so the sample's sender can be recovered later. That address is what
+   * makes ABI-free replay possible: find it inside the calldata and the
+   * recipient position is located without knowing the function at all.
+   */
+  sampleRaw: Map<Hex, Hex>;
   samples: Sample[];
   /** Set once the contract has been reported hot, so it fires only once. */
   flagged: boolean;
+  /**
+   * False while an unrecognised entrypoint is still just being counted.
+   *
+   * Unpromoted contracts cost one map entry and nothing else — no samples, no
+   * sender recovery, no snapshot row.
+   */
+  promoted: boolean;
+  /** True when the entrypoint is one we recognise outright. */
+  knownSelector: boolean;
 }
 
 export interface HotCollection {
@@ -95,6 +121,8 @@ export interface HotCollection {
   topSelector?: Hex;
   /** Calldata observed from a real minter using `topSelector`. */
   sampleCalldata?: Hex;
+  /** The signed transaction that calldata came from. */
+  sampleRaw?: Hex;
   /** Median-ish ETH attached, so the autopilot knows what to send. */
   observedValueWei: bigint;
   attempts: number;
@@ -151,6 +179,14 @@ export interface TrackedCollection {
    * fill; `buildAutoMintCall` handles rewriting any recipient address.
    */
   sampleCalldata?: Hex;
+  /** The signed transaction that calldata came from, for ABI-free replay. */
+  sampleRaw?: Hex;
+  /**
+   * Whether the entrypoint was recognised outright, or learned from the fact
+   * that a lot of distinct wallets were calling it. Surfaced so the UI can be
+   * honest about which it is.
+   */
+  entrypoint: 'known' | 'observed';
   /** True once the tracker's own thresholds flagged this as hot. */
   flagged: boolean;
 }
@@ -201,8 +237,13 @@ export class MintTracker extends EventEmitter {
         uniqueMinters: new Set(),
         selectors: new Map(),
         sampleCalldata: new Map(),
+        sampleRaw: new Map(),
         samples: [],
         flagged: false,
+        // A recognised selector is trusted from the first sighting; anything
+        // else has to be called `promoteAfter` times before it costs anything.
+        promoted: classification.confidence === 'known',
+        knownSelector: classification.confidence === 'known',
       };
       this.contracts.set(contract, stats);
       this.emit('discovered', contract, now);
@@ -214,12 +255,25 @@ export class MintTracker extends EventEmitter {
     stats.totalValueWei += tx.value;
     if (classification.isFree) stats.freeAttempts += 1;
     else stats.paidAttempts += 1;
+    if (classification.confidence === 'known') stats.knownSelector = true;
 
     if (tx.selector) {
       stats.selectors.set(tx.selector, (stats.selectors.get(tx.selector) ?? 0) + 1);
-      if (!stats.sampleCalldata.has(tx.selector)) {
-        stats.sampleCalldata.set(tx.selector, tx.data);
-      }
+    }
+
+    // Enough people have called this to be worth the expensive half.
+    if (!stats.promoted && stats.attempts >= this.config.promoteAfter) {
+      stats.promoted = true;
+    }
+
+    // Everything below costs real work — memory, or ECDSA — so it waits for
+    // promotion. An unrecognised selector called twice is noise; the same one
+    // called by a crowd is a drop nobody hardcoded.
+    if (!stats.promoted) return;
+
+    if (tx.selector && !stats.sampleCalldata.has(tx.selector)) {
+      stats.sampleCalldata.set(tx.selector, tx.data);
+      if (tx.raw) stats.sampleRaw.set(tx.selector, tx.raw);
     }
 
     // Only samples inside the velocity window can ever affect the decision, so
@@ -321,6 +375,7 @@ export class MintTracker extends EventEmitter {
       isFree,
       topSelector,
       sampleCalldata: topSelector ? stats.sampleCalldata.get(topSelector) : undefined,
+      sampleRaw: topSelector ? stats.sampleRaw.get(topSelector) : undefined,
       // Average attached value across observed attempts. For a free mint this
       // is zero; for a paid one it is what real minters are actually paying.
       observedValueWei:
@@ -373,6 +428,9 @@ export class MintTracker extends EventEmitter {
   snapshot(limit = 50, now = Date.now()): TrackedCollection[] {
     const rows: TrackedCollection[] = [];
     for (const stats of this.contracts.values()) {
+      // Unpromoted contracts have no samples and no recovered senders, so a
+      // row for one would be a line of zeroes pretending to be a candidate.
+      if (!stats.promoted) continue;
       const ageSec = (now - stats.firstSeenAt) / 1000;
       const lastSeenSecAgo = (now - stats.lastSeenAt) / 1000;
       const attemptsInWindow = this.attemptsInWindow(stats, now);
@@ -399,6 +457,8 @@ export class MintTracker extends EventEmitter {
         isFree: stats.freeAttempts > stats.paidAttempts,
         topSelector,
         sampleCalldata: topSelector ? stats.sampleCalldata.get(topSelector) : undefined,
+        sampleRaw: topSelector ? stats.sampleRaw.get(topSelector) : undefined,
+        entrypoint: stats.knownSelector ? 'known' : 'observed',
         flagged: stats.flagged,
       });
     }
@@ -407,8 +467,11 @@ export class MintTracker extends EventEmitter {
   }
 
   stats(): Record<string, unknown> {
+    let promoted = 0;
+    for (const c of this.contracts.values()) if (c.promoted) promoted += 1;
     return {
-      contractsTracked: this.contracts.size,
+      contractsTracked: promoted,
+      contractsWatched: this.contracts.size - promoted,
       feedTxSeen: this.totalSeen,
       mintsSeen: this.totalMints,
       droppedSenderRecoveries: this.droppedRecoveries,

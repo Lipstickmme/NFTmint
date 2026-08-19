@@ -13,8 +13,14 @@ import { selectorOf } from './calldata.js';
  */
 
 /**
- * Selectors that indicate a mint attempt. Kept broad because a missed mint is
- * a missed opportunity, while a false positive costs only a tracker row.
+ * Selectors we recognise on sight.
+ *
+ * This list is a *fast path*, not a gate. It used to be the gate, and that was
+ * the single biggest reason auto-mint missed things: a collection whose
+ * entrypoint is `mintTo(address,uint256)` or any of the hundred other shapes in
+ * the wild was never tracked at all, so it could not be scored, let alone
+ * bought. Now an unrecognised selector is still watched — it just has to earn
+ * attention by being called repeatedly (see `looksLikeContractCall`).
  */
 const MINT_SIGNATURES = [
   'mint(uint256)',
@@ -52,10 +58,47 @@ export const SELECTOR_TO_SIGNATURE: ReadonlyMap<Hex, string> = new Map(
   MINT_SIGNATURES.map((sig) => [selectorOf(sig).toLowerCase() as Hex, sig]),
 );
 
+/**
+ * Selectors that are definitely not mints.
+ *
+ * Cheap, and it keeps the busiest traffic on any chain — transfers, approvals,
+ * swaps — out of the tracker entirely, so widening detection does not just mean
+ * tracking everything.
+ */
+const NOT_MINT_SIGNATURES = [
+  'transfer(address,uint256)',
+  'transferFrom(address,address,uint256)',
+  'safeTransferFrom(address,address,uint256)',
+  'safeTransferFrom(address,address,uint256,bytes)',
+  'safeTransferFrom(address,address,uint256,uint256,bytes)',
+  'approve(address,uint256)',
+  'setApprovalForAll(address,bool)',
+  'permit(address,address,uint256,uint256,uint8,bytes32,bytes32)',
+  'deposit()',
+  'withdraw(uint256)',
+  'swapExactTokensForTokens(uint256,uint256,address[],address,uint256)',
+  'swapExactETHForTokens(uint256,address[],address,uint256)',
+  'exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))',
+  'multicall(bytes[])',
+  'execute(bytes,bytes[],uint256)',
+] as const;
+
+export const NOT_MINT_SELECTORS: ReadonlySet<Hex> = new Set(
+  NOT_MINT_SIGNATURES.map((sig) => selectorOf(sig).toLowerCase() as Hex),
+);
+
 export interface MintClassification {
   isMint: boolean;
   /** True when no ETH was attached — a free mint candidate. */
   isFree: boolean;
+  /**
+   * How we know.
+   *
+   *   'known'    — a selector from the list above. Trusted immediately.
+   *   'observed' — an unrecognised entrypoint. Tracked, but it has to be called
+   *                by enough distinct people before it is taken seriously.
+   */
+  confidence: 'known' | 'observed';
   signature?: string;
   selector?: Hex;
 }
@@ -78,15 +121,24 @@ export function classifyMint(
   extraSelectors?: ReadonlySet<Hex>,
 ): MintClassification {
   // Contract creation, or a bare value transfer, is never a mint.
-  if (!tx.to || !tx.selector) return { isMint: false, isFree: false };
+  if (!tx.to || !tx.selector) return { isMint: false, isFree: false, confidence: 'observed' };
 
   const selector = tx.selector.toLowerCase() as Hex;
+
+  if (NOT_MINT_SELECTORS.has(selector)) {
+    return { isMint: false, isFree: false, confidence: 'observed' };
+  }
+
   const known = MINT_SELECTORS.has(selector) || extraSelectors?.has(selector) === true;
-  if (!known) return { isMint: false, isFree: false };
 
   return {
     isMint: true,
     isFree: tx.value === 0n,
+    // An unrecognised entrypoint is a maybe, not a no. The tracker holds it in
+    // a cheap watch state until enough distinct wallets call it, which is a far
+    // better test of "this is a drop people are racing for" than whether we
+    // happened to hardcode the function name.
+    confidence: known ? 'known' : 'observed',
     signature: SELECTOR_TO_SIGNATURE.get(selector),
     selector,
   };

@@ -42,6 +42,9 @@ function info(overrides: Partial<ContractInfo> = {}): ContractInfo {
     progressPct: 60,
     remaining: '2000',
     soldOut: false,
+    // The default fixture is a real collection, so it answers ERC-165.
+    isNft: true,
+    looksLikeNft: true,
     summary: '',
     ...overrides,
   };
@@ -188,10 +191,34 @@ describe('evaluate', () => {
     expect(failedNames(result.checks)).toContain('not already held');
   });
 
+  it('refuses a contract that says it is not an NFT', () => {
+    // Load-bearing since detection stopped requiring a hardcoded selector: on
+    // the feed a busy router looks exactly like a hot drop, and asking the
+    // contract is the only thing that separates them.
+    const result = evaluate(hot(), criteria, info({ isNft: false, looksLikeNft: false }));
+    expect(result.passed).toBe(false);
+    expect(failedNames(result.checks)).toContain('is an NFT');
+    // Not "close" either — nothing you loosen makes a router mintable.
+    expect(result.score).toBe(0);
+  });
+
+  it('accepts an older collection that does not answer ERC-165', () => {
+    // Plenty of real ERC-721s predate it, so silence cannot be a rejection.
+    const result = evaluate(hot(), criteria, info({ isNft: undefined, looksLikeNft: true }));
+    expect(result.passed).toBe(true);
+  });
+
+  it('refuses a contract with neither ERC-165 nor the shape of a collection', () => {
+    const result = evaluate(hot(), criteria, info({ isNft: undefined, looksLikeNft: false }));
+    expect(result.passed).toBe(false);
+    expect(failedNames(result.checks)).toContain('is an NFT');
+  });
+
   it('still passes when supply is unreadable, marking the check skipped', () => {
     // A non-standard ABI should not by itself disqualify a mint.
     const result = evaluate(hot(), criteria, info({
       totalSupply: undefined, maxSupply: undefined, progressPct: undefined, remaining: undefined,
+      isNft: true,
     }));
     expect(result.passed).toBe(true);
     const supply = result.checks.find((c) => c.name === 'supply left');

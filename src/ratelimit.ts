@@ -112,10 +112,21 @@ export function resetRateLimits(): void {
  * wallet.
  */
 export function clientKey(headers: Record<string, string | string[] | undefined>): string {
-  const forwarded = headers['x-forwarded-for'];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const ip = raw?.split(',')[0]?.trim();
-  return ip && ip.length > 0 ? ip : 'shared';
+  // Platform-set headers first. Vercel writes x-real-ip and x-vercel-forwarded-for
+  // itself and a client cannot forge them, whereas x-forwarded-for is merely
+  // *appended* to and its leftmost entry is whatever the caller claimed.
+  //
+  // Worth being plain about the residual: behind no proxy at all — a bare
+  // `npm run serve` — every one of these is client-supplied, so the limit
+  // becomes a courtesy rather than a control. The hard bound on losses stays
+  // MAX_MINT_VALUE_ETH, which no request can widen.
+  for (const name of ['x-real-ip', 'x-vercel-forwarded-for', 'x-forwarded-for']) {
+    const value = headers[name];
+    const raw = Array.isArray(value) ? value[0] : value;
+    const ip = raw?.split(',')[0]?.trim();
+    if (ip) return ip;
+  }
+  return 'shared';
 }
 
 const locks = new Set<string>();

@@ -6,6 +6,14 @@
 keys.txt
 wallets.json
 
+# Local storage for accounts and the findings history. Account files hold
+# sealed private keys — committing one would put every generated wallet in the
+# repository, encrypted but permanently.
+data/
+*.findings.json
+findings.json
+accounts.json
+
 node_modules/
 dist/
 coverage/
