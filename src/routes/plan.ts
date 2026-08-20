@@ -1,9 +1,10 @@
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { loadWalletKeys } from '../src/config.js';
-import { RpcClient } from '../src/rpc.js';
-import { loadWallets } from '../src/wallet.js';
-import { resolveTarget } from '../src/resolve.js';
-import { buildMintPlan } from '../src/mintplan.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { loadWalletKeys } from '../config.js';
+import { RpcClient } from '../rpc.js';
+import { loadWallets } from '../wallet.js';
+import { resolveTarget } from '../resolve.js';
+import { buildMintPlan } from '../mintplan.js';
 
 /**
  * GET /api/plan?target=<address or link>&quantity=1

@@ -687,9 +687,10 @@ src/
   devserver.ts   Local host for the Vercel handlers
   bot.ts         Orchestration
   cli.ts         Command-line entry point
-api/             Vercel serverless routes
+api/[...path].ts One serverless function; dispatches to src/routes/
+src/routes/      The route handlers themselves
 public/index.html  The web UI
-test/            531 tests, incl. end-to-end runs against a mock node
+test/            538 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```

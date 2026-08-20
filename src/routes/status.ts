@@ -1,5 +1,6 @@
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { getStatus } from '../src/service.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { getStatus } from '../service.js';
 
 /**
  * GET /api/status — chain reachability, endpoint latency, wallet balances.

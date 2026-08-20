@@ -26,7 +26,7 @@ import {
 } from '../src/accountstore.js';
 import { resetKv } from '../src/kv.js';
 import { resetRateLimits } from '../src/ratelimit.js';
-import accountHandler from '../api/account.js';
+import accountHandler from '../src/routes/account.js';
 import type { ApiRequest, ApiResponse } from '../src/http.js';
 
 /**

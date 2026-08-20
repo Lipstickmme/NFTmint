@@ -1,4 +1,5 @@
-import { formatEther, type Hex } from 'viem';
+import { formatEther } from 'viem';
+import type { Hex } from 'viem';
 import {
   assertPublicHost,
   createAccount,
@@ -6,16 +7,17 @@ import {
   privateKeysOf,
   toView,
   WALLETS_PER_ACCOUNT,
-} from '../src/accounts.js';
+} from '../accounts.js';
 import {
   accountStorageKind,
   accountsAreDurable,
   authenticateAccount,
   saveAccount,
-} from '../src/accountstore.js';
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { loadHuntRuntime } from '../src/config.js';
-import { RpcClient } from '../src/rpc.js';
+} from '../accountstore.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { loadHuntRuntime } from '../config.js';
+import { RpcClient } from '../rpc.js';
 
 /**
  * POST   /api/account            — sign up: ten fresh wallets and an access key

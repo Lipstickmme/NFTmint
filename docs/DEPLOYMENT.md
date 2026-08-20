@@ -119,6 +119,39 @@ browser only and sent as a bearer token.
 
 ---
 
+## Why there is one function, not fourteen
+
+Every `/api/*` request goes through a single serverless function,
+`api/[...path].ts`, which dispatches to a handler in `src/routes/`. Two reasons,
+both learned the hard way:
+
+**The build used to crash with `Error: Debug Failure.`** — no file, no line, no
+stack. Vercel scans every file in `api/` with ts-morph to look for an exported
+`config`, and ts-morph bundles **TypeScript 4.4.4**. Walking an entrypoint's
+types eventually reaches `abitype`'s declarations (a viem dependency), which use
+syntax 4.4 cannot parse. It then tries to report `Type alias name cannot be
+'{0}'`, omits the argument, and its own message formatter asserts. The crash is
+in a transitive dependency's type definitions, surfaced with none of that
+context. Keeping the entrypoint free of static `src/` imports avoids it
+entirely — there is nothing for that parser to walk.
+
+**Hobby deployments cap serverless functions at twelve.** One dispatcher is one
+function however many routes exist.
+
+Two rules keep it working, and `test/dispatch.test.ts` enforces both:
+
+- **No static imports from `src/` in `api/[...path].ts`.** One is enough to drag
+  the whole type graph back into the 4.4.4 parser.
+- **Route modules are reached through *literal* `import()` specifiers.** Vercel's
+  tracer follows literals and not variables — routing through a string variable
+  produced a function that built green, deployed, and then failed every request
+  on a missing module.
+
+The dev server mounts the same handlers from the same table, so a route that
+works locally works deployed; a test asserts the two tables agree.
+
+---
+
 ## Security — read this part
 
 Putting `PRIVATE_KEYS` on Vercel means **every deployment of this project can

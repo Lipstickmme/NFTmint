@@ -1,5 +1,6 @@
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { scanFeedService } from '../src/service.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { scanFeedService } from '../service.js';
 
 /**
  * GET /api/scan?seconds=20 — sample the sequencer feed and rank collections

@@ -1,9 +1,11 @@
-import { isAddress, type Address } from 'viem';
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { loadWalletKeys } from '../src/config.js';
-import { RpcClient } from '../src/rpc.js';
-import { inspectContract } from '../src/inspect.js';
-import { loadWallets } from '../src/wallet.js';
+import { isAddress } from 'viem';
+import type { Address } from 'viem';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { loadWalletKeys } from '../config.js';
+import { RpcClient } from '../rpc.js';
+import { inspectContract } from '../inspect.js';
+import { loadWallets } from '../wallet.js';
 
 /**
  * GET /api/inspect?contract=0x… — read a collection's live state.

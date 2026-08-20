@@ -1,5 +1,6 @@
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { runPreflightService } from '../src/service.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { runPreflightService } from '../service.js';
 
 /**
  * POST /api/preflight — validate a mint and report gas. Sends nothing.

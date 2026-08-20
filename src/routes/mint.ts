@@ -1,5 +1,6 @@
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { runMintService } from '../src/service.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { runMintService } from '../service.js';
 
 /**
  * POST /api/mint — pre-sign and broadcast a mint immediately.

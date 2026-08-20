@@ -1,7 +1,8 @@
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { runLiveBoard, DEFAULT_LIVE_OPTIONS } from '../src/live.js';
-import { authenticateAccount } from '../src/accountstore.js';
-import { rememberLiveMints } from '../src/liveCache.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { runLiveBoard, DEFAULT_LIVE_OPTIONS } from '../live.js';
+import { authenticateAccount } from '../accountstore.js';
+import { rememberLiveMints } from '../liveCache.js';
 
 /**
  * GET /api/live — everything minting right now.

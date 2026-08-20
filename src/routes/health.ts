@@ -1,9 +1,10 @@
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { loadProxyConfig, proxyRequest } from '../src/proxy.js';
-import { buildInfo } from '../src/version.js';
-import { loadHuntConfig } from '../src/config.js';
-import { criteriaForDisplay } from '../src/hunt.js';
-import { accountsAreDurable } from '../src/accountstore.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { loadProxyConfig, proxyRequest } from '../proxy.js';
+import { buildInfo } from '../version.js';
+import { loadHuntConfig } from '../config.js';
+import { criteriaForDisplay } from '../hunt.js';
+import { accountsAreDurable } from '../accountstore.js';
 
 /**
  * GET /api/health — deployment readiness.

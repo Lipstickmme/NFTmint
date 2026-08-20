@@ -5,10 +5,10 @@ import { NODE_INTERFACE_ADDRESS } from '../src/chain.js';
 import type { ApiRequest, ApiResponse } from '../src/http.js';
 import { resetRateLimits } from '../src/ratelimit.js';
 
-import healthHandler from '../api/health.js';
-import statusHandler from '../api/status.js';
-import preflightHandler from '../api/preflight.js';
-import mintHandler from '../api/mint.js';
+import healthHandler from '../src/routes/health.js';
+import statusHandler from '../src/routes/status.js';
+import preflightHandler from '../src/routes/preflight.js';
+import mintHandler from '../src/routes/mint.js';
 
 /**
  * Drives the real Vercel route handlers against a mock Robinhood Chain node.

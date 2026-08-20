@@ -8,7 +8,7 @@ import { isClose, mergeFinding, toFinding, type Finding } from '../src/findings.
 import { getStore, recordFinding, resetStore } from '../src/store.js';
 import { resetRateLimits } from '../src/ratelimit.js';
 import type { Candidate } from '../src/hunt.js';
-import findingsHandler from '../api/findings.js';
+import findingsHandler from '../src/routes/findings.js';
 import type { ApiRequest, ApiResponse } from '../src/http.js';
 
 /**

@@ -27,6 +27,12 @@ api/*.js.map
 src/*.js
 src/*.d.ts
 src/*.js.map
+src/routes/*.js
+src/routes/*.d.ts
+src/routes/*.js.map
+
+# Local reproduction of a Vercel build.
+.vercel/
 
 npm-debug.log*
 yarn-error.log*

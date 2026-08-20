@@ -1,7 +1,8 @@
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { loadHuntRuntime } from '../src/config.js';
-import { describeOrigin } from '../src/origin.js';
-import { authenticateAccount } from '../src/accountstore.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { loadHuntRuntime } from '../config.js';
+import { describeOrigin } from '../origin.js';
+import { authenticateAccount } from '../accountstore.js';
 
 /**
  * GET /api/origin — the route your mints take onto the chain.

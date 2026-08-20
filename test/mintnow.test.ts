@@ -9,7 +9,7 @@ import { parseFunction, selectorOf } from '../src/calldata.js';
 import { rememberLiveMint } from '../src/liveCache.js';
 import { resetKv } from '../src/kv.js';
 import { resetRateLimits } from '../src/ratelimit.js';
-import mintNowHandler from '../api/mintnow.js';
+import mintNowHandler from '../src/routes/mintnow.js';
 import type { ApiRequest, ApiResponse } from '../src/http.js';
 
 /**

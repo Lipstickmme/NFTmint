@@ -1,17 +1,12 @@
-import {
-  handleApi,
-  authorize,
-  jsonSafe,
-  constantTimeEquals,
-  type ApiRequest,
-  type ApiResponse,
-} from '../src/http.js';
-import { loadHuntConfig } from '../src/config.js';
-import { runHuntCycle, type HuntIdentity } from '../src/hunt.js';
-import { mergeCriteria } from '../src/criteria.js';
-import { withSingleFlight } from '../src/ratelimit.js';
-import { authenticateAccount } from '../src/accountstore.js';
-import { privateKeysOf } from '../src/accounts.js';
+import { handleApi, authorize, jsonSafe, constantTimeEquals } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { loadHuntConfig } from '../config.js';
+import { runHuntCycle } from '../hunt.js';
+import type { HuntIdentity } from '../hunt.js';
+import { mergeCriteria } from '../criteria.js';
+import { withSingleFlight } from '../ratelimit.js';
+import { authenticateAccount } from '../accountstore.js';
+import { privateKeysOf } from '../accounts.js';
 
 /**
  * /api/hunt — one full cycle: sample the feed, judge every candidate, and mint

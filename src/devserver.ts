@@ -12,25 +12,29 @@ import type { ApiRequest, ApiResponse } from './http.js';
  * server. That means the UI can be exercised end to end before deploying, and
  * a bug in a route shows up here rather than in production — the routes are
  * the same code, only the adapter differs.
+ *
+ * On Vercel a single dispatcher in `api/` forwards to these same modules; the
+ * route table there and the one below have to agree, and `test/server.test.ts`
+ * asserts that they do.
  */
 
 type Handler = (req: ApiRequest, res: ApiResponse) => Promise<void>;
 
 const ROUTES: Record<string, () => Promise<{ default: Handler }>> = {
-  '/api/health': () => import('../api/health.js') as Promise<{ default: Handler }>,
-  '/api/status': () => import('../api/status.js') as Promise<{ default: Handler }>,
-  '/api/preflight': () => import('../api/preflight.js') as Promise<{ default: Handler }>,
-  '/api/mint': () => import('../api/mint.js') as Promise<{ default: Handler }>,
-  '/api/scan': () => import('../api/scan.js') as Promise<{ default: Handler }>,
-  '/api/hunt': () => import('../api/hunt.js') as Promise<{ default: Handler }>,
-  '/api/plan': () => import('../api/plan.js') as Promise<{ default: Handler }>,
-  '/api/inspect': () => import('../api/inspect.js') as Promise<{ default: Handler }>,
-  '/api/collections': () => import('../api/collections.js') as Promise<{ default: Handler }>,
-  '/api/findings': () => import('../api/findings.js') as Promise<{ default: Handler }>,
-  '/api/account': () => import('../api/account.js') as Promise<{ default: Handler }>,
-  '/api/origin': () => import('../api/origin.js') as Promise<{ default: Handler }>,
-  '/api/live': () => import('../api/live.js') as Promise<{ default: Handler }>,
-  '/api/mintnow': () => import('../api/mintnow.js') as Promise<{ default: Handler }>,
+  '/api/health': () => import('./routes/health.js') as Promise<{ default: Handler }>,
+  '/api/status': () => import('./routes/status.js') as Promise<{ default: Handler }>,
+  '/api/preflight': () => import('./routes/preflight.js') as Promise<{ default: Handler }>,
+  '/api/mint': () => import('./routes/mint.js') as Promise<{ default: Handler }>,
+  '/api/scan': () => import('./routes/scan.js') as Promise<{ default: Handler }>,
+  '/api/hunt': () => import('./routes/hunt.js') as Promise<{ default: Handler }>,
+  '/api/plan': () => import('./routes/plan.js') as Promise<{ default: Handler }>,
+  '/api/inspect': () => import('./routes/inspect.js') as Promise<{ default: Handler }>,
+  '/api/collections': () => import('./routes/collections.js') as Promise<{ default: Handler }>,
+  '/api/findings': () => import('./routes/findings.js') as Promise<{ default: Handler }>,
+  '/api/account': () => import('./routes/account.js') as Promise<{ default: Handler }>,
+  '/api/origin': () => import('./routes/origin.js') as Promise<{ default: Handler }>,
+  '/api/live': () => import('./routes/live.js') as Promise<{ default: Handler }>,
+  '/api/mintnow': () => import('./routes/mintnow.js') as Promise<{ default: Handler }>,
 };
 
 function adaptResponse(res: http.ServerResponse): ApiResponse {

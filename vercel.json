@@ -1,72 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "echo 'static UI — no build step'",
+  "buildCommand": "echo 'static UI \u2014 no build step'",
   "outputDirectory": "public",
   "functions": {
-    "api/mint.ts": {
-      "maxDuration": 60,
-      "memory": 512,
-      "includeFiles": "src/**"
-    },
-    "api/scan.ts": {
-      "maxDuration": 60,
-      "memory": 512,
-      "includeFiles": "src/**"
-    },
-    "api/hunt.ts": {
+    "api/[...path].ts": {
       "maxDuration": 60,
       "memory": 1024,
-      "includeFiles": "src/**"
-    },
-    "api/inspect.ts": {
-      "maxDuration": 30,
-      "memory": 256,
-      "includeFiles": "src/**"
-    },
-    "api/preflight.ts": {
-      "maxDuration": 30,
-      "memory": 512,
-      "includeFiles": "src/**"
-    },
-    "api/status.ts": {
-      "maxDuration": 30,
-      "memory": 256,
-      "includeFiles": "src/**"
-    },
-    "api/health.ts": {
-      "maxDuration": 15,
-      "memory": 256,
-      "includeFiles": "src/**"
-    },
-    "api/collections.ts": {
-      "maxDuration": 15,
-      "memory": 256,
-      "includeFiles": "src/**"
-    },
-    "api/findings.ts": {
-      "maxDuration": 20,
-      "memory": 256,
-      "includeFiles": "src/**"
-    },
-    "api/account.ts": {
-      "maxDuration": 20,
-      "memory": 256,
-      "includeFiles": "src/**"
-    },
-    "api/origin.ts": {
-      "maxDuration": 25,
-      "memory": 256,
-      "includeFiles": "src/**"
-    },
-    "api/live.ts": {
-      "maxDuration": 60,
-      "memory": 1024,
-      "includeFiles": "src/**"
-    },
-    "api/mintnow.ts": {
-      "maxDuration": 60,
-      "memory": 512,
       "includeFiles": "src/**"
     }
   },
@@ -74,17 +14,35 @@
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "cache-control", "value": "no-store, max-age=0" },
-        { "key": "x-content-type-options", "value": "nosniff" },
-        { "key": "referrer-policy", "value": "no-referrer" }
+        {
+          "key": "cache-control",
+          "value": "no-store, max-age=0"
+        },
+        {
+          "key": "x-content-type-options",
+          "value": "nosniff"
+        },
+        {
+          "key": "referrer-policy",
+          "value": "no-referrer"
+        }
       ]
     },
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "x-frame-options", "value": "DENY" },
-        { "key": "referrer-policy", "value": "no-referrer" },
-        { "key": "cache-control", "value": "no-cache, must-revalidate" },
+        {
+          "key": "x-frame-options",
+          "value": "DENY"
+        },
+        {
+          "key": "referrer-policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "cache-control",
+          "value": "no-cache, must-revalidate"
+        },
         {
           "key": "content-security-policy",
           "value": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"

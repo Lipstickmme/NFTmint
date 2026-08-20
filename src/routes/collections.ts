@@ -1,5 +1,6 @@
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { loadProxyConfig, proxyRequest } from '../src/proxy.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { loadProxyConfig, proxyRequest } from '../proxy.js';
 
 /**
  * GET /api/collections — live leaderboard from a persistent tracker.

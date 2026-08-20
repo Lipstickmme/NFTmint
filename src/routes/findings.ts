@@ -1,11 +1,12 @@
-import { CLOSE_SCORE } from '../src/criteria.js';
-import { handleApi, type ApiRequest, type ApiResponse } from '../src/http.js';
-import { getStore } from '../src/store.js';
-import { authenticateAccount } from '../src/accountstore.js';
-import { fetchFloor, marketConfigured, missedValue } from '../src/market.js';
-import { WALLETS_PER_ACCOUNT } from '../src/accounts.js';
-import type { Finding } from '../src/findings.js';
-import type { FindingStore } from '../src/store.js';
+import { CLOSE_SCORE } from '../criteria.js';
+import { handleApi } from '../http.js';
+import type { ApiRequest, ApiResponse } from '../http.js';
+import { getStore } from '../store.js';
+import { authenticateAccount } from '../accountstore.js';
+import { fetchFloor, marketConfigured, missedValue } from '../market.js';
+import { WALLETS_PER_ACCOUNT } from '../accounts.js';
+import type { Finding } from '../findings.js';
+import type { FindingStore } from '../store.js';
 
 /**
  * GET /api/findings — collections the hunter kept, newest first.

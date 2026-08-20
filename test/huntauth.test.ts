@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { ApiRequest, ApiResponse } from '../src/http.js';
-import huntHandler from '../api/hunt.js';
+import huntHandler from '../src/routes/hunt.js';
 import { resetRateLimits } from '../src/ratelimit.js';
 
 /**
