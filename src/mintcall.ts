@@ -110,6 +110,65 @@ export interface AutoMintInput {
   observed?: Hex;
   /** Who sent it, when recovery succeeded. */
   observedSender?: Address;
+  /**
+   * Take this many in one call, when the contract allows it.
+   *
+   * A copied transaction asks for whatever quantity that particular person
+   * wanted, usually one. On a five-per-wallet free drop that leaves four
+   * behind for the same gas, so where a quantity can be located it is raised
+   * to the cap. Candidates that do so are offered first and the original
+   * quantity is still tried after, because a contract may cap per transaction
+   * more tightly than per wallet.
+   */
+  quantity?: bigint;
+}
+
+/** The largest plausible mint quantity. Anything above this is not a count. */
+const MAX_PLAUSIBLE_QUANTITY = 10_000n;
+
+/**
+ * The single argument that looks like a quantity, if there is exactly one.
+ *
+ * ABI-free, so it works on entrypoints nobody has hardcoded. The rule is
+ * deliberately strict: every word after the selector must be a small integer,
+ * and exactly one of them may be non-trivial. A payload carrying an address, a
+ * merkle proof, or a token id has words that fail that test, and returning
+ * nothing there is correct — a wrong guess would corrupt the call.
+ */
+export function findQuantityWord(data: Hex): number | undefined {
+  const body = data.slice(10);
+  if (body.length === 0 || body.length % WORD !== 0) return undefined;
+
+  const words = body.length / WORD;
+  // More than a couple of arguments and the shape is too ambiguous to read
+  // without an ABI.
+  if (words > 2) return undefined;
+
+  let found: number | undefined;
+  for (let i = 0; i < words; i += 1) {
+    const at = i * WORD;
+    let value: bigint;
+    try {
+      value = BigInt(`0x${body.slice(at, at + WORD)}`);
+    } catch {
+      return undefined;
+    }
+    if (value === 0n) continue;
+    if (value > MAX_PLAUSIBLE_QUANTITY) return undefined;
+    // Two candidate quantities is one too many to choose between.
+    if (found !== undefined) return undefined;
+    found = at;
+  }
+  return found;
+}
+
+/** Rewrite the quantity word, leaving every other byte alone. */
+export function setQuantity(data: Hex, quantity: bigint): Hex | undefined {
+  const at = findQuantityWord(data);
+  if (at === undefined) return undefined;
+  const body = data.slice(10);
+  const replacement = quantity.toString(16).padStart(WORD, '0');
+  return (data.slice(0, 10) + body.slice(0, at) + replacement + body.slice(at + WORD)) as Hex;
 }
 
 /**
@@ -120,7 +179,7 @@ export interface AutoMintInput {
  * arbiter than any amount of reasoning here about what the ABI probably is.
  */
 export function buildAutoMintCalls(input: AutoMintInput): AutoMintCall[] {
-  const { selector, observed, observedSender } = input;
+  const { selector, observed, observedSender, quantity } = input;
   if (!observed || observed.length < 10) return [];
 
   const calls: AutoMintCall[] = [];
@@ -133,6 +192,27 @@ export function buildAutoMintCalls(input: AutoMintInput): AutoMintCall[] {
     seen.add(probe);
     calls.push(call);
   };
+
+  // 0. The whole per-wallet allowance, where a quantity can be located.
+  //    Offered first because it is strictly better when it works, and the
+  //    ordinary quantity is still tried after if the contract refuses.
+  if (quantity !== undefined && quantity > 1n && quantity <= MAX_PLAUSIBLE_QUANTITY) {
+    const bulk = setQuantity(observed, quantity);
+    if (bulk) {
+      const swapped = observedSender
+        ? swapAddressWords(bulk, observedSender, PROBE_WALLET)
+        : undefined;
+      add({
+        strategy: swapped ? 'address-swap' : 'verbatim',
+        label: `take all ${quantity} at once`,
+        describe:
+          `Copied a working mint and raised the quantity to ${quantity}, the ` +
+          `contract's per-wallet limit, so one transaction takes the whole allowance.`,
+        buildFor: (wallet) =>
+          (observedSender ? swapAddressWords(bulk, observedSender, wallet) : undefined) ?? bulk,
+      });
+    }
+  }
 
   // 1. The observed sender's address, found inside their own calldata.
   if (observedSender) {

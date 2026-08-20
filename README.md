@@ -273,6 +273,8 @@ RPC_URLS=https://your-dedicated-endpoint
 | `POST /api/account` | Sign up: ten generated wallets and an access key |
 | `GET /api/account` | Your addresses and balances. `?reveal=1` returns the private keys |
 | `PATCH /api/account` | Set your own RPC, or pause auto-mint |
+| `GET /api/live` | Everything minting right now, with supply, price and round |
+| `POST /api/mintnow` | Mint one collection from the board, in one press |
 | `GET /api/origin` | Which endpoint your mints leave through, and how far away it is |
 
 ### You don't need to know the ABI
@@ -444,6 +446,58 @@ rather than a hunch.
 
 Operators running on `PRIVATE_KEYS` change endpoints by redeploying; the
 per-account override is for signed-up users.
+
+### The live board: what is minting right now
+
+A different question from the hunter's, and it needed its own screen. The hunter
+asks "should I buy this", applies seven rules, and mostly answers **no** — right
+for spending money unattended, useless as a view of the chain.
+
+The board asks only "is this a real drop, and is it happening", then shows
+everything known about it:
+
+- **supply as a bar**, not two numbers to subtract in your head
+- **price**, from the contract rather than an average of what the feed saw
+- **which round is running** — a public round and an allowlist round are the
+  difference between minting and burning gas on a certain revert
+- **max per wallet**, speed, distinct wallets, and how long until it is gone
+- **what is happening, in words**: `Minting out — about 34s left`,
+  `60 wallets in 2m`, `Gone in 90s`
+
+Only the urgent line animates and only a bar that is still filling sweeps —
+if everything moved, nothing would read as urgent. All of it respects
+`prefers-reduced-motion`.
+
+One filter, and it is the only one that matters here: **mints since the drop
+started**. Below that threshold a contract is not a drop, it is somebody testing
+their own deployment. Sold-out collections stay on the board, because "it went
+in ninety seconds" is information after the fact.
+
+**Mint any row in one press.** The board already found, for every collection it
+shows, a transaction that mints it successfully — pressing Mint replays it
+through exactly the same path the automatic hunter uses. No second
+implementation, so no second place for the recipient-rewriting bug to come back.
+The hunt criteria are deliberately *not* applied: a person pressing a button on
+a specific row has already made that decision. The spending ceiling still is,
+because that is not a preference.
+
+### Free mints take the whole allowance
+
+A copied transaction asks for whatever quantity that particular person wanted,
+usually one. The contract's `maxPerWallet` is read, and where a quantity can be
+located in the calldata it is raised to the cap — five tokens for one gas fee
+instead of one. The original quantity is still tried afterwards, because a
+contract can cap per transaction more tightly than per wallet.
+
+**Free mints only**, deliberately. On a paid drop this would multiply the ETH
+sent, and the price ceiling that was checked against a single mint would no
+longer describe what is being spent. Raising a quantity there is a spending
+decision, not an optimisation.
+
+Finding the quantity without an ABI is deliberately strict: every word after the
+selector must be a small integer and exactly one may be non-trivial. A payload
+carrying an address, a token id, or a merkle proof fails that test and is left
+alone — a wrong guess would corrupt the call.
 
 ### Where your mints leave from
 
@@ -622,6 +676,8 @@ src/
   store.ts       The findings history on top of it
   accounts.ts    Wallet generation, sealing, and the RPC allowlist
   accountstore.ts Where accounts live, and how they authenticate
+  live.ts        The live board: what is minting, and what to say about it
+  liveCache.ts   The working calldata behind each row, so Mint needs no re-scan
   origin.ts      Provider, region and latency for every endpoint in play
   market.ts      Floor prices for the free mints that got away
   server.ts      Tracker HTTP API + self-contained dashboard
@@ -633,7 +689,7 @@ src/
   cli.ts         Command-line entry point
 api/             Vercel serverless routes
 public/index.html  The web UI
-test/            492 tests, incl. end-to-end runs against a mock node
+test/            531 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```

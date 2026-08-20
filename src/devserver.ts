@@ -29,6 +29,8 @@ const ROUTES: Record<string, () => Promise<{ default: Handler }>> = {
   '/api/findings': () => import('../api/findings.js') as Promise<{ default: Handler }>,
   '/api/account': () => import('../api/account.js') as Promise<{ default: Handler }>,
   '/api/origin': () => import('../api/origin.js') as Promise<{ default: Handler }>,
+  '/api/live': () => import('../api/live.js') as Promise<{ default: Handler }>,
+  '/api/mintnow': () => import('../api/mintnow.js') as Promise<{ default: Handler }>,
 };
 
 function adaptResponse(res: http.ServerResponse): ApiResponse {

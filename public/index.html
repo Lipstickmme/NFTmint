@@ -62,6 +62,7 @@
   .thumbs{display:flex;gap:6px}
   .thumb{width:34px;height:34px;border-radius:10px;object-fit:cover;background:var(--sunk);flex:none}
   .thumb.big{width:60px;height:60px;border-radius:16px}
+  .thumb.ph{display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--mute)}
   .circ{width:38px;height:38px;border-radius:50%;border:none;background:var(--sunk);
     color:var(--ink);font-size:19px;font-weight:400;line-height:1;padding:0;flex:none;
     display:flex;align-items:center;justify-content:center;cursor:pointer}
@@ -121,7 +122,42 @@
   .chip.good{background:var(--ok);color:#fff}
 
   .bar{height:5px;border-radius:99px;background:var(--line);overflow:hidden;margin:10px 0 4px}
-  .bar>div{height:100%;border-radius:99px;background:var(--inv)}
+  .bar>div{height:100%;border-radius:99px;background:var(--inv);
+    transition:width .6s cubic-bezier(.2,.7,.3,1)}
+  /* A bar that is still filling sweeps, so "moving" is visible at a glance
+     rather than requiring two readings a minute apart. */
+  .bar.moving>div{background:linear-gradient(90deg,var(--inv) 0%,var(--mute) 50%,var(--inv) 100%);
+    background-size:220% 100%;animation:sweep 1.6s linear infinite}
+  .bar.done>div{background:var(--mute)}
+  @keyframes sweep{to{background-position:-220% 0}}
+
+  /* Event chips. Only the urgent one pulses — if everything moved, nothing
+     would read as urgent. */
+  .ev{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;
+    font-size:10.5px;font-weight:600;letter-spacing:.02em;background:var(--sunk);
+    color:var(--mute);margin:6px 6px 0 0}
+  .ev.minting-out{background:var(--inv);color:var(--inv-ink);animation:breathe 1.9s ease-in-out infinite}
+  .ev.sold-out{background:var(--line);color:var(--mute)}
+  .ev.fast,.ev.crowd{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+  @keyframes breathe{0%,100%{opacity:1}50%{opacity:.55}}
+  .ev .dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+  .ev.minting-out .dot{animation:blink 1s steps(2,end) infinite}
+  @keyframes blink{50%{opacity:.2}}
+
+  /* A row that just appeared should say so. */
+  .liverow{animation:rise .45s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  @media (prefers-reduced-motion:reduce){
+    .bar.moving>div,.ev.minting-out,.ev.minting-out .dot,.liverow{animation:none}
+    .bar>div{transition:none}
+  }
+
+  .mintcard{background:var(--sunk);border-radius:var(--rs);padding:16px;margin-bottom:9px}
+  .mintcard.out{opacity:.55}
+  .mintcard .head{display:flex;align-items:center;gap:12px}
+  .mintcard .meta{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px}
+  .mintcard .meta div{min-width:60px}
 
   .chk{display:grid;grid-template-columns:14px 1fr;gap:9px;padding:8px 0;font-size:12.5px;
     border-bottom:1px solid var(--line)}
@@ -181,18 +217,19 @@
 
 <div class="nav">
   <button id="navMints"   onclick="go('mints')"   title="Mints">◎</button>
-  <button id="navOrigin"  onclick="go('origin')"  title="Where mints leave from">⊕</button>
+  <button id="navLive"    onclick="go('live')"    title="Minting now">◉</button>
   <button id="navAccount" onclick="go('account')" title="Your wallets">◍</button>
   <button id="navRules"   onclick="go('rules')"   title="Rules">☰</button>
 </div>
 
 <script>
 'use strict';
-var PAGE_VERSION = '10-plainerrors';
+var PAGE_VERSION = '11-live';
 
 /* ── state ──────────────────────────────────────────────────────────────── */
 var view='mints', tab='passed', hunting=false, rounds=0, selected=null;
 var hist=null, origin=null, acctView=null, revealed=null, defaults=null, health=null;
+var board=null, boardTimer=null, minting={};
 var seenArt=[], logLines=[], busyLabel='', signupNotice=null, statusInfo=null;
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
@@ -262,7 +299,12 @@ function thumbs(){
 }
 
 /* ── navigation ─────────────────────────────────────────────────────────── */
-function go(v){ view=v; selected=null; render();
+function go(v){
+  // The board keeps refreshing while you are looking at it and stops when you
+  // are not: each round holds the sequencer feed open for twenty seconds.
+  if(view==='live' && v!=='live') stopBoard();
+  view=v; selected=null; render();
+  if(v==='live') startBoard();
   if(v==='origin') loadOrigin();
   if(v==='account') loadAccount();
   if(v==='mints') loadFindings();
@@ -442,14 +484,17 @@ function ruleQuery(){ var q=[], r=rules(), keys=Object.keys(r);
 
 /* ── render ─────────────────────────────────────────────────────────────── */
 function render(){
-  var ids=['navMints','navOrigin','navAccount','navRules'];
-  var names=['mints','origin','account','rules'];
+  var ids=['navMints','navLive','navAccount','navRules'];
+  var names=['mints','live','account','rules'];
   for(var i=0;i<ids.length;i++){
-    var on = names[i]===view || (view==='detail'&&names[i]==='mints');
+    var on = names[i]===view ||
+      (view==='detail' && names[i]==='mints') ||
+      (view==='origin' && names[i]==='account');
     $(ids[i]).className = on? 'on' : '';
   }
   var html =
     view==='detail'  ? renderDetail()  :
+    view==='live'    ? renderLive()    :
     view==='origin'  ? renderOrigin()  :
     view==='account' ? renderAccount() :
     view==='rules'   ? renderRules()   : renderMints();
@@ -565,14 +610,28 @@ function renderDetail(){
   out.push('<div class="top">'+
     (img? '<img class="thumb big" src="'+esc(img)+'" alt="" onerror="this.style.display=\'none\'">'
         : '<div class="thumbs"></div>')+
-    '<button class="circ" onclick="go(\'mints\')" title="Back">×</button></div>');
+    '<button class="circ" onclick="go(\''+(f.live?'live':'mints')+'\')" title="Back">×</button>'+
+    '</div>');
 
-  /* The reference's stacked giant numerals: score over 100. */
+  /* The reference's stacked giant numerals. For something the hunter judged
+     that is its score; for a row off the live board it is how far through the
+     supply the drop is, which is the number you actually want there. */
+  var big, unit, caption;
+  if(f.live){
+    var lpct=f.live.progressPct;
+    big = lpct===undefined||lpct===null ? '—' : Math.round(lpct);
+    unit = lpct===undefined||lpct===null ? '' : '%';
+    caption = f.live.soldOut ? 'minted out' : 'minted';
+  } else {
+    big = f.score===undefined? '—' : f.score;
+    unit = '/100';
+    caption = f.passed? 'passed' : 'close';
+  }
   out.push('<div style="display:flex;align-items:flex-start;gap:16px;margin:6px 0 4px">');
-  out.push('<div>'+num(f.score===undefined?'—':f.score,'xxl')+'</div>');
+  out.push('<div>'+num(big,'xxl')+'</div>');
   out.push('<div style="padding-top:10px">'+
-    '<div class="num m mute">/100</div>'+
-    '<div class="k" style="margin-top:10px">'+(f.passed?'passed':'close')+'</div></div>');
+    '<div class="num m mute">'+esc(unit)+'</div>'+
+    '<div class="k" style="margin-top:10px">'+esc(caption)+'</div></div>');
   out.push('</div>');
 
   out.push('<h2 class="display" style="margin-top:14px">'+esc(f.name||shortAddr(f.contract))+'</h2>');
@@ -583,10 +642,33 @@ function renderDetail(){
   out.push(stat('wallets minting', esc(f.uniqueMinters)));
   out.push(stat('supply left', f.remaining!==undefined&&f.remaining!==null? esc(f.remaining):'—'));
   out.push(stat('sells out in', fmtDur(f.projectedSelloutSec)));
-  out.push('</div>');
+  if(f.live){
+    out.push(stat('price', f.live.isFree? 'free' : esc(f.live.priceEth)+' ETH'));
+    if(f.live.maxPerWallet) out.push(stat('max each', esc(f.live.maxPerWallet)));
+    if(f.live.maxSupply) out.push(stat('max supply', esc(f.live.maxSupply)));
+    if(f.live.phase) out.push(stat('round', esc(f.live.phase)));
+  }
   out.push('</div>');
 
-  /* What it turned out to be worth. */
+  if(f.live){
+    var lp = f.live.progressPct;
+    if(lp!==undefined&&lp!==null)
+      out.push('<div class="bar'+(f.live.soldOut?' done':' moving')+'" style="margin-top:18px">'+
+        '<div style="width:'+Math.max(0,Math.min(100,lp)).toFixed(1)+'%"></div></div>');
+    for(var ei=0;ei<(f.live.events||[]).length;ei++)
+      out.push('<span class="ev '+esc(f.live.events[ei].kind)+'"><span class="dot"></span>'+
+        esc(f.live.events[ei].text)+'</span>');
+    var laddr=addrOnly(f.contract);
+    if(laddr && !f.live.soldOut)
+      out.push('<div class="acts"><button class="solid" onclick="mintNow(\''+esc(laddr)+
+        '\')">'+(isPractice()?'Practice mint':'Mint now')+'</button></div>');
+  }
+  out.push('</div>');
+
+  /* What it turned out to be worth. Only meaningful for something already
+     found and skipped — a collection still minting has no aftermarket yet. */
+  if(f.live) return out.join('');
+
   out.push('<div class="card flat">');
   out.push('<div class="k">Floor now</div>');
   if(f.floor){
@@ -645,12 +727,214 @@ function stat(k,v){
     v+'</div></div>';
 }
 
+/* ── screen: live board ─────────────────────────────────────────────────── */
+/**
+ * What is minting right now.
+ *
+ * A different question from the hunter's list, and worth its own screen. The
+ * hunter answers "should I buy this" and mostly says no, which is right for
+ * spending money unattended and useless as a view of the chain. This answers
+ * "what is happening", shows the numbers, and lets you decide.
+ */
+function startBoard(){
+  if(boardTimer) return;
+  loadBoard();
+  // Each round holds the feed open for ~20s, so this paces just behind that.
+  boardTimer=setInterval(function(){ if(view==='live') loadBoard(); }, 24000);
+}
+function stopBoard(){ if(boardTimer){ clearInterval(boardTimer); boardTimer=null; } }
+
+async function loadBoard(){
+  if(!signedIn()){ board=null; render(); return; }
+  if(board===null) board='loading';
+  render();
+  try{
+    board=await api('/api/live?seconds=20&minMints='+encodeURIComponent(minMints()));
+    for(var i=0;i<board.mints.length;i++) noteArt(board.mints[i].imageUrl);
+  }catch(e){ board={error:e.message,mints:[]}; }
+  render();
+}
+
+function minMints(){ return localStorage.getItem('fm_minmints')||'12'; }
+function setMinMints(v){ localStorage.setItem('fm_minmints',String(v)); loadBoard(); }
+
+function renderLive(){
+  var out=['<div class="card">'];
+  out.push('<div class="top">'+thumbs()+
+    '<button class="circ" onclick="loadBoard()" title="Watch again">↻</button></div>');
+  out.push('<h1>Minting now</h1>');
+
+  if(!signedIn()){
+    out.push('<p class="lede">Sign in to watch the chain.</p>'+
+      '<div class="acts"><button class="solid wide" onclick="go(\'account\')">Get started</button>'+
+      '</div></div>');
+    return out.join('');
+  }
+
+  if(board==='loading'||board===null){
+    out.push('<p class="lede"><span class="spin"></span> Watching the chain for 20 seconds…</p>');
+    out.push('</div>'); return out.join('');
+  }
+  if(board.error){ out.push(msg('err',esc(board.error))+'</div>'); return out.join(''); }
+
+  out.push('<p class="lede">'+esc(board.note)+'</p>');
+
+  /* The volume floor is the only filter that matters here: below it a contract
+     is not a drop, it is somebody testing. */
+  var cur=String(minMints());
+  var opts=[['5','Everything'],['12','Real drops'],['50','Busy only']];
+  var seg='';
+  for(var t=0;t<opts.length;t++)
+    seg+='<button class="'+(cur===opts[t][0]?'on':'')+'" onclick="setMinMints(\''+opts[t][0]+
+      '\')">'+esc(opts[t][1])+'</button>';
+  out.push('<div class="acts"><div class="seg">'+seg+'</div>'+
+    '<span class="mute" style="font-size:12px">'+esc(board.observed.mintsSeen)+' mints seen</span>'+
+    '</div>');
+  out.push('</div>');
+
+  if(!board.mints.length){
+    out.push('<div class="card flat"><p class="lede">Nothing is minting at that level right '+
+      'now. Loosen the filter, or leave this open — it watches again every 20 seconds.</p></div>');
+    return out.join('');
+  }
+
+  out.push('<div class="card flat">');
+  for(var i=0;i<board.mints.length;i++) out.push(liveCard(board.mints[i]));
+  out.push('</div>');
+  return out.join('');
+}
+
+function liveCard(m){
+  var addr=addrOnly(m.contract), img=safeUrl(m.imageUrl);
+  var pct = m.progressPct!==undefined && m.progressPct!==null
+    ? Math.max(0,Math.min(100,m.progressPct)) : null;
+  var moving = !m.soldOut && m.status==='live';
+
+  var out=['<div class="mintcard liverow'+(m.soldOut?' out':'')+'">'];
+
+  out.push('<div class="head">');
+  out.push(img? '<img class="thumb" src="'+esc(img)+'" alt="" loading="lazy" '+
+    'onerror="this.style.display=\'none\'">'
+    : '<div class="thumb ph">◆</div>');
+  out.push('<div class="grow" style="flex:1;min-width:0">'+
+    '<div class="k">'+esc(m.isFree? 'free' : m.priceEth+' ETH')+
+      (m.phase? ' · '+esc(m.phase==='allowlist'?'allowlist round':m.phase):'')+'</div>'+
+    '<div class="name">'+esc(m.name||shortAddr(m.contract))+'</div></div>');
+  out.push('<div class="right">'+
+    num(pct===null? '—' : Math.round(pct), 'l')+
+    '<span class="glyph mute" style="font-size:11px">'+(pct===null?'':'%')+'</span></div>');
+  out.push('</div>');
+
+  /* Supply, as a bar rather than two numbers to subtract in your head. */
+  if(pct!==null){
+    out.push('<div class="bar'+(m.soldOut?' done':(moving?' moving':''))+'">'+
+      '<div style="width:'+pct.toFixed(1)+'%"></div></div>');
+    out.push('<div class="hint">'+esc(m.totalSupply)+' of '+esc(m.maxSupply)+' minted'+
+      (m.remaining&&!m.soldOut? ' · '+esc(m.remaining)+' left':'')+'</div>');
+  } else {
+    out.push('<div class="hint">Supply is not readable from this contract.</div>');
+  }
+
+  for(var e=0;e<m.events.length;e++)
+    out.push('<span class="ev '+esc(m.events[e].kind)+'"><span class="dot"></span>'+
+      esc(m.events[e].text)+'</span>');
+
+  out.push('<div class="meta">');
+  out.push(mini('speed', esc(m.mintsPerMinute)+'/min'));
+  out.push(mini('wallets', esc(m.uniqueMinters)));
+  out.push(mini('price', m.isFree? 'free' : esc(m.priceEth)+' ETH'));
+  if(m.maxPerWallet) out.push(mini('max each', esc(m.maxPerWallet)));
+  if(m.projectedSelloutSec!==undefined&&m.projectedSelloutSec!==null&&!m.soldOut)
+    out.push(mini('gone in', fmtDur(m.projectedSelloutSec)));
+  out.push('</div>');
+
+  /* One press mints it, using the working transaction this board already found. */
+  var state=minting[m.contract];
+  out.push('<div class="acts">');
+  if(m.soldOut){
+    out.push('<button disabled>Minted out</button>');
+  } else if(m.phase==='allowlist'){
+    out.push('<button onclick="mintNow(\''+esc(addr)+'\')"'+(state==='busy'?' disabled':'')+
+      '>Try anyway</button>');
+    out.push('<span class="mute" style="font-size:11.5px">allowlist round — only listed '+
+      'wallets can mint</span>');
+  } else {
+    out.push('<button class="solid" onclick="mintNow(\''+esc(addr)+'\')"'+
+      (state==='busy'?' disabled':'')+'>'+
+      (state==='busy'? '<span class="spin"></span> minting' :
+        (isPractice()? 'Practice mint' : 'Mint now'))+'</button>');
+  }
+  if(addr) out.push('<button class="link" onclick="openLive(\''+esc(addr)+'\')">details</button>');
+  out.push('</div>');
+
+  if(state && state!=='busy') out.push(msg(state.ok?'ok':'warn', esc(state.text)));
+  out.push('</div>');
+  return out.join('');
+}
+
+function mini(k,v){
+  return '<div><div class="k">'+esc(k)+'</div><div class="num m" style="margin-top:4px">'+
+    v+'</div></div>';
+}
+
+/** Reuse the detail screen by shaping a board row like a stored finding. */
+function openLive(contract){
+  for(var i=0;i<((board&&board.mints)||[]).length;i++){
+    var m=board.mints[i];
+    if(m.contract!==contract) continue;
+    selected={
+      contract:m.contract, name:m.name, imageUrl:m.imageUrl,
+      score:undefined, passed:false,
+      mintsPerMinute:m.mintsPerMinute, uniqueMinters:m.uniqueMinters,
+      remaining:m.remaining, progressPct:m.progressPct,
+      projectedSelloutSec:m.projectedSelloutSec,
+      firstSeenAt:new Date(Date.now()-m.ageSec*1000).toISOString(),
+      lastSeenAt:new Date().toISOString(), timesSeen:1,
+      reason:m.events.map(function(e){ return e.text; }).join(' · '),
+      failedChecks:[], live:m,
+    };
+    // Stop watching while looking at one row: the board holds the sequencer
+    // feed open for twenty seconds a round and nothing here needs it.
+    stopBoard();
+    view='detail'; render(); window.scrollTo({top:0,behavior:'smooth'});
+    return;
+  }
+}
+
+async function mintNow(contract){
+  if(!addrOnly(contract)) return;
+  if(!isPractice() && !confirm('Mint this now?\n\nIt spends real gas from every funded '+
+    'wallet on your account.')) return;
+
+  minting[contract]='busy'; render();
+  try{
+    var r=await api('/api/mintnow',{method:'POST',
+      body:JSON.stringify({contract:contract,dryRun:isPractice()})});
+    if(r.confirmed>0){
+      minting[contract]={ok:true,text:'Minted '+r.confirmed+' of '+r.attempted+
+        (r.how? ' — '+r.how : '')};
+      log('MINTED '+(r.name||shortAddr(contract))+' — '+r.confirmed+' confirmed');
+    } else if(r.error){
+      minting[contract]={ok:false,text:r.error};
+      log('NOT MINTED — '+r.error);
+    } else {
+      minting[contract]={ok:false,text:'Sent '+r.attempted+', none confirmed yet.'};
+    }
+  }catch(e){
+    minting[contract]={ok:false,text:e.message};
+    log('Mint failed — '+e.message);
+  }
+  render();
+  loadFindings();
+}
+
 /* ── screen: origin ─────────────────────────────────────────────────────── */
 function renderOrigin(){
   var out=['<div class="card">'];
   out.push('<div class="top"><div><div class="k">Route</div>'+
-    '<h1 style="margin-top:4px">Where mints leave from</h1></div>'+
-    '<button class="circ" onclick="loadOrigin()" title="Measure again">↻</button></div>');
+    '<h1 style="margin-top:4px">How fast is your RPC</h1></div>'+
+    '<button class="circ" onclick="go(\'account\')" title="Back">×</button></div>');
+  out.push('<div class="acts"><button onclick="loadOrigin()">Measure again</button></div>');
 
   if(!signedIn()){
     out.push('<p class="lede">Sign in to measure your endpoints.</p></div>');

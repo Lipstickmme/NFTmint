@@ -43,6 +43,47 @@ const PRICE_FNS = [
   'publicMintPrice()',
   'salePrice()',
 ];
+/**
+ * Per-wallet mint caps.
+ *
+ * Read so a free mint can take the whole allowance in one call instead of the
+ * single token a copied transaction happens to ask for. On a one-per-wallet
+ * drop this changes nothing; on a five-per-wallet drop it is five times the
+ * result for the same gas.
+ */
+const PER_WALLET_FNS = [
+  'maxPerWallet()',
+  'MAX_PER_WALLET()',
+  'maxMintPerWallet()',
+  'maxMintsPerWallet()',
+  'maxPerAddress()',
+  'maxMintAmount()',
+  'MAX_MINT_AMOUNT()',
+  'maxPerTx()',
+  'MAX_PER_TX()',
+  'maxMintPerTx()',
+  'maxBatchSize()',
+];
+
+/**
+ * Flags that mean the *restricted* round is the one running.
+ *
+ * Kept apart from the public flags because the difference decides whether a
+ * wallet can mint at all: an allowlist round rejects everyone not on it, and
+ * showing that as "open" would send people to burn gas on a certain revert.
+ */
+const ALLOWLIST_OPEN_FNS = [
+  'presaleActive()',
+  'preSaleIsActive()',
+  'presaleIsActive()',
+  'whitelistActive()',
+  'isWhitelistActive()',
+  'allowlistActive()',
+  'isAllowlistActive()',
+  'privateSaleActive()',
+  'isPresaleActive()',
+];
+
 const SALE_OPEN_FNS = [
   'saleIsActive()',
   'saleActive()',
@@ -94,6 +135,12 @@ export interface ContractInfo {
   soldOut?: boolean;
   priceWei?: ProbedValue<string>;
   saleOpen?: ProbedValue<boolean>;
+  /** The restricted round's flag, when the contract exposes one. */
+  presaleOpen?: ProbedValue<boolean>;
+  /** Which round is running, as far as the contract will say. */
+  phase?: 'public' | 'allowlist' | 'closed';
+  /** Tokens one wallet may hold or mint at once, when readable. */
+  maxPerWallet?: ProbedValue<string>;
   /** How many tokens the given wallet already holds. */
   ownedByWallet?: string;
   /** Artwork preview, when one was requested and could be resolved. */
@@ -214,7 +261,7 @@ export async function inspectContract(
 
   const [
     nameRaw, symbolRaw, totalSupply, maxSupply, priceWei, saleOpen, owned, isNft,
-    decimalsRaw, tokenUri,
+    decimalsRaw, tokenUri, presaleOpen, maxPerWallet,
   ] = await Promise.all([
       probe(client, contract, 'name()'),
       probe(client, contract, 'symbol()'),
@@ -227,6 +274,8 @@ export async function inspectContract(
       // Positive and negative tells, for contracts that skip ERC-165.
       probe(client, contract, 'decimals()'),
       probeFirst(client, contract, ['tokenURI(uint256)', 'uri(uint256)'], (raw) => raw),
+      probeFirst(client, contract, ALLOWLIST_OPEN_FNS, decodeBool),
+      probeFirst(client, contract, PER_WALLET_FNS, decodeUint),
     ]);
 
   // Anything with `decimals()` is a fungible token, not a collection. Worth
@@ -249,6 +298,17 @@ export async function inspectContract(
     maxSupply,
     priceWei,
     saleOpen,
+    presaleOpen,
+    // Public wins when both flags are on: anyone can mint, which is the fact
+    // that matters. Allowlist-only is the case worth warning about.
+    phase: saleOpen?.value
+      ? 'public'
+      : presaleOpen?.value
+        ? 'allowlist'
+        : saleOpen || presaleOpen
+          ? 'closed'
+          : undefined,
+    maxPerWallet: maxPerWallet && BigInt(maxPerWallet.value) > 0n ? maxPerWallet : undefined,
     ownedByWallet: owned?.toString(),
     summary: '',
   };
@@ -334,9 +394,11 @@ function describe(info: ContractInfo): string {
     parts.push('supply not readable from this contract');
   }
 
-  if (info.saleOpen) {
-    parts.push(info.saleOpen.value ? 'sale is OPEN' : 'sale is CLOSED');
-  }
+  if (info.phase === 'public') parts.push('public round OPEN');
+  else if (info.phase === 'allowlist') parts.push('ALLOWLIST round — public not open yet');
+  else if (info.phase === 'closed') parts.push('sale is CLOSED');
+
+  if (info.maxPerWallet) parts.push(`max ${info.maxPerWallet.value} per wallet`);
 
   if (info.priceWei) {
     const wei = BigInt(info.priceWei.value);

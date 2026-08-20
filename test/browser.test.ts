@@ -79,6 +79,41 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
     autoMint: true, rpcUrl: undefined as string | undefined,
   };
   let huntCalls = 0;
+  let mintNowCalls: string[] = [];
+
+  // Three rows spanning the states the board has to render: about to sell out,
+  // an allowlist round, and one already gone.
+  const liveRows: Record<string, unknown>[] = [
+    {
+      contract: '0x00000000000000000000000000000000000000aa', name: 'Solar Cats',
+      ageSec: 120, status: 'live', mints: 640, mintsPerMinute: 320, uniqueMinters: 60,
+      mintsInWindow: 90, totalSupply: '820', maxSupply: '1000', progressPct: 82,
+      remaining: '180', soldOut: false, priceWei: '0', priceEth: '0', isFree: true,
+      phase: 'public', maxPerWallet: '3', projectedSelloutSec: 34,
+      events: [
+        { kind: 'minting-out', text: 'Minting out — about 34s left' },
+        { kind: 'crowd', text: '60 wallets in 2m' },
+      ],
+    },
+    {
+      contract: '0x00000000000000000000000000000000000000bb', name: 'Night Foxes',
+      ageSec: 300, status: 'live', mints: 210, mintsPerMinute: 42, uniqueMinters: 31,
+      mintsInWindow: 20, totalSupply: '400', maxSupply: '2000', progressPct: 20,
+      remaining: '1600', soldOut: false, priceWei: '5000000000000000',
+      priceEth: '0.005', isFree: false, phase: 'allowlist', projectedSelloutSec: 2280,
+      events: [{ kind: 'crowd', text: '31 wallets in 5m' }],
+    },
+    {
+      contract: '0x00000000000000000000000000000000000000cc', name: 'Paper Moons',
+      ageSec: 90, status: 'quiet', mints: 500, mintsPerMinute: 333, uniqueMinters: 44,
+      mintsInWindow: 0, totalSupply: '500', maxSupply: '500', progressPct: 100,
+      remaining: '0', soldOut: true, priceWei: '0', priceEth: '0', isFree: true,
+      events: [
+        { kind: 'sold-out', text: 'Minted out' },
+        { kind: 'fast', text: 'Gone in 90s' },
+      ],
+    },
+  ];
 
   const srv = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -100,7 +135,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        build: { uiVersion: '10-plainerrors', commit: 'testing', deployedAt: 'local' },
+        build: { uiVersion: '11-live', commit: 'testing', deployedAt: 'local' },
         configured: {
           apiToken: true, privateKeys: true, rpcUrls: true, network: 'testnet',
           spendCeilingEth: '0.05', upstreamTracker: false,
@@ -178,6 +213,31 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
       });
     }
 
+    if (url.pathname === '/api/live') {
+      if (!signedIn) return json({ error: 'Sign in first.' }, 401);
+      const min = Number(url.searchParams.get('minMints') ?? 12);
+      return json({
+        startedAt: new Date().toISOString(), sampledSeconds: 20, feedConnected: true,
+        observed: { feedTxSeen: 900, mintsSeen: 240, contractsTracked: 12 },
+        minMints: min,
+        note: 'Watched 20s.',
+        mints: liveRows.filter((m) => Number(m.mints) >= min),
+      });
+    }
+
+    if (url.pathname === '/api/mintnow') {
+      if (!signedIn) return json({ error: 'Sign in first.' }, 401);
+      return void readBody().then((body) => {
+        mintNowCalls.push(String(body.contract));
+        json({
+          contract: body.contract, name: 'Solar Cats', dryRun: Boolean(body.dryRun),
+          attempted: 10, accepted: 10, confirmed: 10,
+          strategy: 'address-swap', how: 'took all 3 at once',
+          txs: [{ hash: '0xaaa', url: 'https://explorer/tx/0xaaa', accepted: true }],
+        });
+      });
+    }
+
     if (url.pathname === '/api/status') {
       if (req.headers.authorization !== 'Bearer operator-token-long-enough') {
         return json({ error: 'invalid token' }, 401);
@@ -211,6 +271,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
   const reset = (): void => {
     findings = seedFindings();
     huntCalls = 0;
+    mintNowCalls = [];
     account = { ...account, autoMint: true, rpcUrl: undefined };
   };
 
@@ -432,20 +493,108 @@ describe.skipIf(!chromiumPath)('the app in a browser', () => {
     await page.close();
   });
 
-  it('reports where mints leave from, and does not invent a location for anyone else', async () => {
+  it('shows everything minting, with supply, price and round', async () => {
     const { page, errors } = await openPage();
-    await page.click('#navOrigin');
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+
+    const live = await page.textContent('#app');
+    expect(live).toContain('Solar Cats');
+    expect(live).toContain('820');          // minted
+    expect(live).toContain('1000');         // max supply
+    expect(live).toContain('180');          // remaining
+    expect(live).toContain('0.005 ETH');    // a paid mint's price
+    expect(live).toContain('allowlist');    // which round is running
+    expect(live).toContain('3');            // max per wallet
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('says out loud what is happening, and animates only the urgent one', async () => {
+    const { page, errors } = await openPage();
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+
+    // The line the board exists for.
+    expect(await page.textContent('#app')).toContain('60 wallets in 2m');
+    expect(await page.textContent('#app')).toContain('Minting out');
+
+    expect(await page.locator('.ev.minting-out').count()).toBe(1);
+    expect(await page.locator('.ev.sold-out').count()).toBe(1);
+    // A bar that is still filling sweeps; a finished one does not.
+    expect(await page.locator('.bar.moving').count()).toBeGreaterThan(0);
+    expect(await page.locator('.bar.done').count()).toBe(1);
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('draws the supply bar to the real proportion', async () => {
+    const { page, errors } = await openPage();
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+
+    const width = await page.evaluate(() =>
+      (document.querySelector('.mintcard .bar > div') as HTMLElement | null)?.style.width);
+    // The browser normalises 82.0% to 82%.
+    expect(width).toBe('82%');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('mints a row in one press', async () => {
+    const { page, errors } = await openPage();
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+
+    await page.click('.mintcard:has-text("Solar Cats") button:has-text("Practice mint")');
     await page.waitForFunction(
-      () => (document.getElementById('app')?.textContent ?? '').includes('Alchemy'),
+      () => (document.getElementById('app')?.textContent ?? '').includes('Minted 10'),
       null, { timeout: 15_000 });
 
-    const origin = await page.textContent('#app');
-    expect(origin).toContain('US East');
-    expect(origin).toContain('42');
-    expect(origin).toContain('210');
-    // The honesty note has to survive redesigns: a map of rival minters would
-    // be fabricated, and the page must keep saying so.
-    expect(origin).toMatch(/where your own transactions enter/i);
+    expect(await page.textContent('#app')).toContain('took all 3 at once');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('will not offer a plain mint button on a sold-out row', async () => {
+    const { page, errors } = await openPage();
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+
+    const soldOut = page.locator('.mintcard:has-text("Paper Moons")');
+    expect(await soldOut.locator('button:has-text("Minted out")').isDisabled()).toBe(true);
+    // An allowlist round is offered, but labelled as the long shot it is.
+    expect(await page.textContent('.mintcard:has-text("Night Foxes")'))
+      .toMatch(/only listed wallets/i);
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('filters the board by how much has minted since the drop started', async () => {
+    const { page, errors } = await openPage();
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+    expect(await page.locator('.mintcard').count()).toBe(3);
+
+    await page.click('button:has-text("Busy only")');
+    await page.waitForFunction(
+      () => document.querySelectorAll('.mintcard').length === 3,
+      null, { timeout: 15_000 });
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('opens one mint in detail from the board', async () => {
+    const { page, errors } = await openPage();
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+
+    await page.click('.mintcard:has-text("Solar Cats") button:has-text("details")');
+    await page.waitForSelector('.num.xxl', { timeout: 8000 });
+
+    // For a live row the giant number is supply progress, not a hunt score.
+    expect(await page.textContent('.num.xxl')).toBe('82');
+    expect(await page.textContent('#app')).toContain('max supply');
     expect(errors).toEqual([]);
     await page.close();
   });
@@ -496,7 +645,7 @@ describe.skipIf(!chromiumPath)('the app in a browser', () => {
 
   it('moves between every screen without dying', async () => {
     const { page, errors } = await openPage();
-    for (const nav of ['#navOrigin', '#navAccount', '#navRules', '#navMints']) {
+    for (const nav of ['#navLive', '#navAccount', '#navRules', '#navMints']) {
       await page.click(nav);
       await page.waitForSelector('#app .card');
       expect((await page.textContent('#app'))?.length ?? 0).toBeGreaterThan(20);

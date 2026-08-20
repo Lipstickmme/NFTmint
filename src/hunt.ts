@@ -297,8 +297,9 @@ export async function runHuntCycle(
   };
 }
 
-interface MintCandidateParams {
+export interface MintCandidateParams {
   collection: TrackedCollection;
+  /** Contract reads, for the per-wallet cap and the price. */
   info?: ContractInfo;
   config: HuntRuntime;
   wallets: Wallet[];
@@ -311,12 +312,19 @@ interface MintCandidateParams {
   maxValueWei: bigint;
 }
 
-/** Mint one qualifying collection across every wallet. */
-async function mintCandidate(
+/**
+ * Mint one collection across every wallet.
+ *
+ * Exported because the live board's Mint button needs exactly this and nothing
+ * else: the same candidate generation, the same simulation gate, the same
+ * funded-wallet filter. A second implementation would be a second place for the
+ * recipient-rewriting bug to come back.
+ */
+export async function mintCandidate(
   params: MintCandidateParams,
 ): Promise<NonNullable<Candidate['minted']>> {
-  const { collection, config, wallets, primary, submitClients, dryRun, freeOnly, maxValueWei } =
-    params;
+  const { collection, info, config, wallets, primary, submitClients, dryRun, freeOnly,
+    maxValueWei } = params;
   const empty = { attempted: 0, accepted: 0, confirmed: 0, txs: [] };
 
   // In free-only mode send nothing, whatever the feed showed. Otherwise pay
@@ -341,10 +349,23 @@ async function mintCandidate(
   // swap work on an entrypoint nobody has ever seen.
   const observedSender = await recoverSampleSender(collection.sampleRaw);
 
+  // Take the whole per-wallet allowance where the contract states one.
+  //
+  // Free mints only, and deliberately so. On a free drop this is the difference
+  // between one token and five for the same gas, with no extra downside. On a
+  // paid one it would multiply the ETH sent, and the price ceiling that was
+  // checked against a single mint would no longer describe what is being spent.
+  // Raising a quantity is a spending decision there, not an optimisation.
+  const perWallet =
+    freeOnly && value === 0n && info?.maxPerWallet
+      ? BigInt(info.maxPerWallet.value)
+      : undefined;
+
   const candidates = buildAutoMintCalls({
     selector: collection.topSelector,
     observed: collection.sampleCalldata,
     observedSender,
+    quantity: perWallet,
   });
 
   if (candidates.length === 0) {
@@ -391,6 +412,7 @@ async function mintCandidate(
   log.info('MINT CALL CHOSEN', {
     contract,
     strategy: call.strategy,
+    label: call.label,
     signature: call.signature ?? 'unknown entrypoint',
     rejected: rejected.length,
   });

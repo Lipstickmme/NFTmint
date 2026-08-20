@@ -351,6 +351,35 @@ unknown until you configure a source you trust.
 
 ---
 
+## The live board
+
+`/api/live` samples the sequencer feed and reports everything minting, with
+supply, price, round, and the numbers behind each. It reads only — no wallet is
+touched and nothing is signed — so it works before anyone has funded anything.
+
+It is the heaviest route in the deployment: it holds the feed open for its
+sampling window and then inspects a dozen contracts. Budgeted at 60s and 1GB in
+`vercel.json`, and charged against the `hunt` rate-limit bucket rather than
+`read`.
+
+Two knobs, both on the query string:
+
+```bash
+curl -H "x-account-id: $ID" -H "x-account-token: $KEY" \
+  "https://your-app.vercel.app/api/live?seconds=20&minMints=12"
+```
+
+`minMints` is the floor that decides what counts as a drop. Below it a contract
+is one person testing their own deployment.
+
+Pressing **Mint** on a row calls `POST /api/mintnow`, which replays the working
+transaction the board already captured, through the same path the hunter uses.
+That route applies the NFT gate, the sold-out check and the price ceiling, but
+not the hunt criteria — someone pressing a button on a named row has already
+decided what to mint.
+
+---
+
 ## Two lists: passed, and close
 
 The app keeps two lists, and the second one is the useful half.

@@ -5,7 +5,9 @@ import {
   buildAutoMintCall,
   buildAutoMintCalls,
   findAddressWords,
+  findQuantityWord,
   recoverSampleSender,
+  setQuantity,
   swapAddressWords,
 } from '../src/mintcall.js';
 import { parseFunction, selectorOf } from '../src/calldata.js';
@@ -230,6 +232,95 @@ describe('buildAutoMintCalls', () => {
     })) {
       expect(call.describe.length).toBeGreaterThan(20);
     }
+  });
+});
+
+describe('taking the whole per-wallet allowance', () => {
+  it('finds the quantity in a single-argument mint', () => {
+    expect(findQuantityWord(encode('mint(uint256)', [1n]))).toBe(0);
+  });
+
+  it('refuses when two arguments could both be the quantity', () => {
+    // Guessing wrong here corrupts the call, and there is no way to tell
+    // `mint(uint256 id, uint256 qty)` from its opposite without an ABI.
+    expect(findQuantityWord(encode('mint(uint256,uint256)', [2n, 3n]))).toBeUndefined();
+  });
+
+  it('refuses a payload carrying an address', () => {
+    // An address is a huge number; treating it as a count would be absurd, and
+    // overwriting it would send the mint somewhere else entirely.
+    expect(findQuantityWord(encode('mint(address,uint256)', [OTHER_MINTER, 1n])))
+      .toBeUndefined();
+  });
+
+  it('refuses a merkle proof', () => {
+    const proof = ['0x' + 'ab'.repeat(32)] as Hex[];
+    expect(findQuantityWord(encode('whitelistMint(uint256,bytes32[])', [1n, proof])))
+      .toBeUndefined();
+  });
+
+  it('refuses a token id far too large to be a count', () => {
+    expect(findQuantityWord(encode('mint(uint256)', [99_999_999n]))).toBeUndefined();
+  });
+
+  it('rewrites the quantity and nothing else', () => {
+    const bumped = setQuantity(encode('mint(uint256)', [1n]), 5n)!;
+    const decoded = decodeFunctionData({
+      abi: [parseFunction('mint(uint256)')] as Abi, data: bumped,
+    });
+    expect(decoded.args?.[0]).toBe(5n);
+    expect(bumped.slice(0, 10)).toBe(selectorOf('mint(uint256)'));
+  });
+
+  it('offers the full allowance first, and the observed quantity after', () => {
+    // First because it is strictly better when it works; still followed by the
+    // original, because a contract can cap per transaction more tightly than
+    // per wallet and the simulation has to have something to fall back to.
+    const calls = buildAutoMintCalls({
+      selector: selectorOf('mint(uint256)'),
+      observed: encode('mint(uint256)', [1n]),
+      quantity: 5n,
+    });
+    expect(calls[0].label).toBe('take all 5 at once');
+    expect(calls).toHaveLength(2);
+
+    const decoded = decodeFunctionData({
+      abi: [parseFunction('mint(uint256)')] as Abi, data: calls[0].buildFor(OUR_WALLET),
+    });
+    expect(decoded.args?.[0]).toBe(5n);
+  });
+
+  it('still mints to us when the payload also carries a recipient', () => {
+    // mint(address,uint256) has no locatable quantity, so the bulk candidate is
+    // skipped — but the address swap must still be there.
+    const calls = buildAutoMintCalls({
+      selector: selectorOf('mint(address,uint256)'),
+      observed: encode('mint(address,uint256)', [OTHER_MINTER, 1n]),
+      observedSender: OTHER_MINTER,
+      quantity: 5n,
+    });
+    expect(strategies(calls)[0]).toBe('address-swap');
+    expect(calls[0].buildFor(OUR_WALLET).toLowerCase())
+      .not.toContain(OTHER_MINTER.slice(2).toLowerCase());
+  });
+
+  it('does nothing when the allowance is one', () => {
+    const calls = buildAutoMintCalls({
+      selector: selectorOf('mint(uint256)'),
+      observed: encode('mint(uint256)', [1n]),
+      quantity: 1n,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].label).not.toMatch(/take all/);
+  });
+
+  it('ignores an allowance too large to be real', () => {
+    const calls = buildAutoMintCalls({
+      selector: selectorOf('mint(uint256)'),
+      observed: encode('mint(uint256)', [1n]),
+      quantity: 10n ** 30n,
+    });
+    expect(calls.every((c) => !/take all/.test(c.label))).toBe(true);
   });
 });
 
