@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { Address, Hex } from 'viem';
-import { describeEvents, toLiveMint, DEFAULT_LIVE_OPTIONS } from '../src/live.js';
+import {
+  describeBoard,
+  describeEvents,
+  toLiveMint,
+  DEFAULT_LIVE_OPTIONS,
+} from '../src/live.js';
 import type { TrackedCollection } from '../src/tracker.js';
 import type { ContractInfo } from '../src/inspect.js';
 
@@ -175,10 +180,66 @@ describe('toLiveMint', () => {
   });
 });
 
+describe('what the board keeps', () => {
+  it('labels a contract it could not identify rather than hiding it', () => {
+    // Hiding it is a judgement the reader should get to make. The mint path
+    // still refuses it; the board still shows it.
+    const m = toLiveMint(tracked(), undefined);
+    expect(m.kind).toBe('unverified');
+  });
+
+  it('marks a contract ERC-165 vouched for as confirmed', () => {
+    expect(toLiveMint(tracked(), info()).kind).toBe('confirmed');
+  });
+
+  it('marks an older collection with the right shape as likely', () => {
+    const m = toLiveMint(tracked(), info({ isNft: undefined, looksLikeNft: true }));
+    expect(m.kind).toBe('likely');
+  });
+});
+
 describe('the volume floor', () => {
-  it('defaults high enough to exclude somebody testing a contract', () => {
-    // Below this it is not a drop. The whole board depends on this number
-    // being a real filter rather than a formality.
-    expect(DEFAULT_LIVE_OPTIONS.minMints).toBeGreaterThanOrEqual(10);
+  it('is low, because the board is a window and not a shortlist', () => {
+    // The judgement on this page belongs to the person reading it. A high floor
+    // turned it into a filter that showed nothing and then blamed the reader's
+    // settings — the version this replaces reported "7301 mints seen" above an
+    // empty list.
+    expect(DEFAULT_LIVE_OPTIONS.minMints).toBeLessThanOrEqual(3);
+    // Not zero: a single stray call to a contract is not a drop.
+    expect(DEFAULT_LIVE_OPTIONS.minMints).toBeGreaterThan(1);
+  });
+
+  it('inspects enough contracts to fill a screen', () => {
+    expect(DEFAULT_LIVE_OPTIONS.inspectTop).toBeGreaterThanOrEqual(20);
+  });
+});
+
+describe('describeBoard', () => {
+  const none = { seen: 0, belowFloor: 0, notNft: 0, notInspected: 0, unreadable: 0 };
+
+  it('accounts for every contract it held back', () => {
+    // "Loosen the filter" was useless twice over: it did not say what had been
+    // dropped, and it blamed the reader for what was usually something else.
+    const note = describeBoard(20, 3, {
+      seen: 38, belowFloor: 31, notNft: 4, notInspected: 0, unreadable: 0,
+    });
+    expect(note).toContain('38 contract(s) seen, 3 shown');
+    expect(note).toContain('31 under the mint floor');
+    expect(note).toContain('4 not NFT contracts');
+  });
+
+  it('says plainly when the chain was quiet', () => {
+    expect(describeBoard(20, 0, none)).toMatch(/no contracts being called/);
+  });
+
+  it('mentions what it could not read', () => {
+    const note = describeBoard(20, 2, { ...none, seen: 2, unreadable: 2 });
+    expect(note).toMatch(/could not be read/);
+  });
+
+  it('stays quiet about categories with nothing in them', () => {
+    const note = describeBoard(20, 5, { ...none, seen: 5 });
+    expect(note).not.toContain('Held back');
+    expect(note).not.toContain('could not be read');
   });
 });

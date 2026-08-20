@@ -468,10 +468,22 @@ Only the urgent line animates and only a bar that is still filling sweeps —
 if everything moved, nothing would read as urgent. All of it respects
 `prefers-reduced-motion`.
 
-One filter, and it is the only one that matters here: **mints since the drop
-started**. Below that threshold a contract is not a drop, it is somebody testing
-their own deployment. Sold-out collections stay on the board, because "it went
-in ninety seconds" is information after the fact.
+**The bias is toward showing things.** This is a window on the chain, not a
+shortlist — a person can dismiss a row in a second but cannot see one that was
+filtered away. So the volume floor defaults to almost nothing, contracts that
+cannot be identified are shown and labelled `unverified` rather than dropped,
+and sold-out collections stay because "it went in ninety seconds" is information
+after the fact.
+
+Exactly one thing is removed outright: a contract that answers, directly, that
+it is not an NFT. Swap routers and fungible tokens land there, and that is not a
+judgement call.
+
+When rows *are* held back, the board says how many and why — "38 contracts seen,
+4 shown. Held back: 31 under the mint floor, 3 not NFT contracts." An earlier
+version reported *7301 mints seen* above an empty list and suggested loosening
+the filter, which was wrong twice over: it did not say what had been dropped,
+and it blamed the reader's settings for something else entirely.
 
 **Mint any row in one press.** The board already found, for every collection it
 shows, a transaction that mints it successfully — pressing Mint replays it
@@ -690,7 +702,7 @@ src/
 api/[...path].ts One serverless function; dispatches to src/routes/
 src/routes/      The route handlers themselves
 public/index.html  The web UI
-test/            538 tests, incl. end-to-end runs against a mock node
+test/            548 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```

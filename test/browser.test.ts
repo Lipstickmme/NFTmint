@@ -89,7 +89,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
       ageSec: 120, status: 'live', mints: 640, mintsPerMinute: 320, uniqueMinters: 60,
       mintsInWindow: 90, totalSupply: '820', maxSupply: '1000', progressPct: 82,
       remaining: '180', soldOut: false, priceWei: '0', priceEth: '0', isFree: true,
-      phase: 'public', maxPerWallet: '3', projectedSelloutSec: 34,
+      phase: 'public', maxPerWallet: '3', projectedSelloutSec: 34, kind: 'confirmed',
       events: [
         { kind: 'minting-out', text: 'Minting out — about 34s left' },
         { kind: 'crowd', text: '60 wallets in 2m' },
@@ -101,6 +101,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
       mintsInWindow: 20, totalSupply: '400', maxSupply: '2000', progressPct: 20,
       remaining: '1600', soldOut: false, priceWei: '5000000000000000',
       priceEth: '0.005', isFree: false, phase: 'allowlist', projectedSelloutSec: 2280,
+      kind: 'confirmed',
       events: [{ kind: 'crowd', text: '31 wallets in 5m' }],
     },
     {
@@ -108,10 +109,25 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
       ageSec: 90, status: 'quiet', mints: 500, mintsPerMinute: 333, uniqueMinters: 44,
       mintsInWindow: 0, totalSupply: '500', maxSupply: '500', progressPct: 100,
       remaining: '0', soldOut: true, priceWei: '0', priceEth: '0', isFree: true,
+      kind: 'likely',
       events: [
         { kind: 'sold-out', text: 'Minted out' },
         { kind: 'fast', text: 'Gone in 90s' },
       ],
+    },
+    {
+      // Barely moving, and carrying artwork — it exercises both the volume
+      // filter and the image that has to survive a refresh.
+      contract: '0x00000000000000000000000000000000000000dd', name: 'Quiet Ducks',
+      ageSec: 40, status: 'live', mints: 4, mintsPerMinute: 6, uniqueMinters: 3,
+      mintsInWindow: 2, totalSupply: '4', maxSupply: '900', progressPct: 0.4,
+      remaining: '896', soldOut: false, priceWei: '0', priceEth: '0', isFree: true,
+      phase: 'public', kind: 'unverified',
+      imageUrl:
+        'data:image/svg+xml;base64,' +
+        Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>')
+          .toString('base64'),
+      events: [{ kind: 'steady', text: '4 minted so far' }],
     },
   ];
 
@@ -135,7 +151,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        build: { uiVersion: '11-live', commit: 'testing', deployedAt: 'local' },
+        build: { uiVersion: '12-board', commit: 'testing', deployedAt: 'local' },
         configured: {
           apiToken: true, privateKeys: true, rpcUrls: true, network: 'testnet',
           spendCeilingEth: '0.05', upstreamTracker: false,
@@ -220,7 +236,8 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
         startedAt: new Date().toISOString(), sampledSeconds: 20, feedConnected: true,
         observed: { feedTxSeen: 900, mintsSeen: 240, contractsTracked: 12 },
         minMints: min,
-        note: 'Watched 20s.',
+        note: 'Watched 20s. 3 contract(s) seen, 3 shown.',
+        excluded: { seen: 3, belowFloor: 0, notNft: 0, notInspected: 0, unreadable: 0 },
         mints: liveRows.filter((m) => Number(m.mints) >= min),
       });
     }
@@ -570,19 +587,54 @@ describe.skipIf(!chromiumPath)('the app in a browser', () => {
     await page.close();
   });
 
-  it('filters the board by how much has minted since the drop started', async () => {
+  it('shows everything by default, and tightens only when asked', async () => {
+    // The board is a window on the chain, not a shortlist — the default has to
+    // err toward showing rows, because a reader can dismiss one in a second but
+    // cannot see one that was filtered away.
     const { page, errors } = await openPage();
     await page.click('#navLive');
     await page.waitForSelector('.mintcard', { timeout: 15_000 });
-    expect(await page.locator('.mintcard').count()).toBe(3);
+    expect(await page.locator('.mintcard').count()).toBe(4);
 
-    await page.click('button:has-text("Busy only")');
+    await page.click('button:has-text("Busiest")');
     await page.waitForFunction(
       () => document.querySelectorAll('.mintcard').length === 3,
       null, { timeout: 15_000 });
     expect(errors).toEqual([]);
     await page.close();
-  });
+  }, 25_000);
+
+  it('keeps the artwork alive across a refresh', async () => {
+    // The reported failure: thumbnails blinked out every twenty seconds,
+    // because a refresh rewrote each row and destroyed its <img> with it.
+    const { page, errors } = await openPage();
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard img.thumb', { timeout: 15_000 });
+
+    // Tag the live element, then force a refresh and see if the same one is
+    // still there — a recreated image would have lost the marker.
+    await page.evaluate(() => {
+      (document.querySelector('.mintcard img.thumb') as HTMLElement).dataset.survived = 'yes';
+    });
+    await page.evaluate(() => (window as unknown as { loadBoard: () => Promise<void> }).loadBoard());
+    await page.waitForTimeout(300);
+
+    const survived = await page.evaluate(() =>
+      (document.querySelector('.mintcard img.thumb') as HTMLElement | null)?.dataset.survived);
+    expect(survived).toBe('yes');
+    expect(errors).toEqual([]);
+  }, 25_000);
+
+  it('says what it held back instead of blaming the filter', async () => {
+    const { page, errors } = await openPage();
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+    // The summary accounts for every contract seen, shown or not.
+    expect(await page.textContent('#liveNote')).toMatch(/contract\(s\) seen/);
+    expect(await page.textContent('#app')).not.toMatch(/Loosen the filter/i);
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 25_000);
 
   it('opens one mint in detail from the board', async () => {
     const { page, errors } = await openPage();

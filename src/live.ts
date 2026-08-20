@@ -18,10 +18,20 @@ import { log } from './logger.js';
  * this a real drop, and is it happening", and then reports everything known
  * about it so a person can decide for themselves.
  *
- * The one filter that matters is volume since the drop began. A contract with
- * four mints is not a drop; it is somebody testing. Everything past that
- * threshold is shown, sold out included, because "it went in ninety seconds"
- * is information even after the fact.
+ * The bias is deliberately toward showing things. This is a window on the
+ * chain, not a shortlist — a person can dismiss a row in a second, but cannot
+ * see one that was filtered away. So the volume floor is low, contracts that
+ * cannot be identified are shown and labelled rather than dropped, and sold-out
+ * collections stay because "it went in ninety seconds" is information after the
+ * fact.
+ *
+ * Only one thing is removed outright: a contract that answers, directly, that
+ * it is not an NFT. Those are swap routers and tokens, and they are not a
+ * judgement call.
+ *
+ * When rows do get held back, the board says how many and why. "Loosen the
+ * filter" is not an explanation; "38 seen, 31 below the floor, 4 not NFT
+ * contracts, 3 shown" is.
  */
 
 export interface LiveEvent {
@@ -62,6 +72,18 @@ export interface LiveMint {
   phase?: 'public' | 'allowlist' | 'closed';
   maxPerWallet?: string;
 
+  /**
+   * How sure we are this is a collection.
+   *
+   *   'confirmed'  — ERC-165 says ERC-721 or ERC-1155.
+   *   'likely'     — no ERC-165, but it has the shape: a token URI, or a name
+   *                  and a supply.
+   *   'unverified' — nothing readable either way. Shown and labelled rather
+   *                  than hidden, because hiding it is a judgement the reader
+   *                  should get to make.
+   */
+  kind: 'confirmed' | 'likely' | 'unverified';
+
   projectedSelloutSec?: number;
   /** Headline events, most interesting first. */
   events: LiveEvent[];
@@ -79,6 +101,8 @@ export interface LiveBoard {
   observed: { feedTxSeen: number; mintsSeen: number; contractsTracked: number };
   /** The volume floor that was applied. */
   minMints: number;
+  /** What was held back, and why. Shown instead of "loosen the filter". */
+  excluded: LiveExclusions;
   mints: LiveMint[];
   note: string;
 }
@@ -96,11 +120,34 @@ export interface LiveOptions {
 
 export const DEFAULT_LIVE_OPTIONS: LiveOptions = {
   windowSec: 20,
-  // Below this it is not a drop, it is somebody testing their own contract.
-  minMints: 12,
-  inspectTop: 12,
+  /**
+   * Low on purpose.
+   *
+   * A high floor turns a window on the chain into a shortlist, and the whole
+   * point of this page is that the judgement belongs to the person reading it.
+   * Three is enough to exclude a single stray call without excluding a drop
+   * that is only ten seconds old.
+   */
+  minMints: 3,
+  // Every row costs a handful of contract reads, run in parallel. Two dozen
+  // fits comfortably inside the request budget.
+  inspectTop: 24,
   withArt: true,
 };
+
+/** Why a contract that was seen minting did not make it onto the board. */
+export interface LiveExclusions {
+  /** Contracts observed in the window, before any filtering. */
+  seen: number;
+  /** Fewer mints than the floor asked for. */
+  belowFloor: number;
+  /** Answered that they are not an ERC-721 or ERC-1155. */
+  notNft: number;
+  /** Beyond the inspection budget for this request. */
+  notInspected: number;
+  /** The contract read failed, so nothing could be said about them. */
+  unreadable: number;
+}
 
 /**
  * Turn the numbers into the one or two things worth saying out loud.
@@ -159,6 +206,34 @@ export function describeEvents(m: {
   return events;
 }
 
+/**
+ * Account for every contract the window saw.
+ *
+ * The version of this that just said "0 collections, loosen the filter" was
+ * useless twice over: it did not say what had been dropped, and it blamed the
+ * reader's settings for what was usually something else entirely.
+ */
+export function describeBoard(
+  windowSec: number,
+  shown: number,
+  excluded: LiveExclusions,
+): string {
+  if (excluded.seen === 0) {
+    return `Watched ${windowSec}s and saw no contracts being called at all.`;
+  }
+
+  const parts = [`Watched ${windowSec}s. ${excluded.seen} contract(s) seen, ${shown} shown.`];
+  const held: string[] = [];
+  if (excluded.belowFloor > 0) held.push(`${excluded.belowFloor} under the mint floor`);
+  if (excluded.notNft > 0) held.push(`${excluded.notNft} not NFT contracts`);
+  if (excluded.notInspected > 0) held.push(`${excluded.notInspected} past the read budget`);
+  if (held.length > 0) parts.push(`Held back: ${held.join(', ')}.`);
+  if (excluded.unreadable > 0) {
+    parts.push(`${excluded.unreadable} could not be read and are shown unverified.`);
+  }
+  return parts.join(' ');
+}
+
 /** Build one board row from a tracked collection plus its contract reads. */
 export function toLiveMint(c: TrackedCollection, info?: ContractInfo): LiveMint {
   // The contract's own price is authoritative; what the feed saw people paying
@@ -200,6 +275,8 @@ export function toLiveMint(c: TrackedCollection, info?: ContractInfo): LiveMint 
     isFree: priceWei === 0n,
     phase: info?.phase,
     maxPerWallet: info?.maxPerWallet?.value,
+    kind:
+      info?.isNft === true ? 'confirmed' : info?.looksLikeNft ? 'likely' : 'unverified',
     projectedSelloutSec,
     events: describeEvents(base),
     entrypoint: c.topSelector,
@@ -234,6 +311,10 @@ export async function runLiveBoard(
     maxContracts: trackerCfg.maxContracts,
     evictAfterSec: trackerCfg.evictAfterSec,
     extraSelectors: parseExtraSelectors(trackerCfg.extraSelectorsRaw),
+    // Lower than the hunter's, for the same reason the floor is: a contract
+    // that never gets promoted never appears at all, and this page is supposed
+    // to show what is happening rather than decide what is worth happening.
+    promoteAfter: 3,
   });
 
   const feed = new FeedConsumer({ url: trackerCfg.feedUrl });
@@ -256,10 +337,17 @@ export async function runLiveBoard(
     contractsTracked: tracker.size(),
   };
 
-  const shortlist = tracker
-    .snapshot(100)
-    .filter((c) => c.attempts >= opts.minMints)
-    .slice(0, opts.inspectTop);
+  const all = tracker.snapshot(200);
+  const passedFloor = all.filter((c) => c.attempts >= opts.minMints);
+  const shortlist = passedFloor.slice(0, opts.inspectTop);
+
+  const excluded: LiveExclusions = {
+    seen: all.length,
+    belowFloor: all.length - passedFloor.length,
+    notNft: 0,
+    notInspected: passedFloor.length - shortlist.length,
+    unreadable: 0,
+  };
 
   // Reads only — no keys needed, so the board works before anyone signs up.
   const config = loadHuntRuntime(env, false);
@@ -283,11 +371,20 @@ export async function runLiveBoard(
 
     for (let i = 0; i < shortlist.length; i += 1) {
       const info = inspected[i];
-      // Same gate the hunter uses: on the feed a busy router is shaped exactly
-      // like a hot drop, and only the contract can tell them apart.
-      if (!info || info.isNft === false || (info.isNft === undefined && !info.looksLikeNft)) {
+
+      // The only thing removed outright: a contract that says, directly, that
+      // it is not a collection. Swap routers and tokens land here, and that is
+      // not a judgement call.
+      if (info?.isNft === false) {
+        excluded.notNft += 1;
         continue;
       }
+
+      // A failed read is not evidence of anything. It gets a row marked
+      // 'unverified' rather than disappearing, and is counted so the board can
+      // say how much it could not see.
+      if (!info) excluded.unreadable += 1;
+
       mints.push(toLiveMint(shortlist[i], info));
     }
   } finally {
@@ -309,10 +406,10 @@ export async function runLiveBoard(
     feedConnected,
     observed,
     minMints: opts.minMints,
+    excluded,
     mints,
     note: feedConnected
-      ? `Watched ${opts.windowSec}s. ${mints.length} collection(s) minting with at least ` +
-        `${opts.minMints} mints since they started.`
+      ? describeBoard(opts.windowSec, mints.length, excluded)
       : 'Could not reach the sequencer feed, so nothing could be observed.',
   };
 }
