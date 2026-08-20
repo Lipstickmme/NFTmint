@@ -254,12 +254,12 @@
 
 <script>
 'use strict';
-var PAGE_VERSION = '13-rows';
+var PAGE_VERSION = '14-budget';
 
 /* ── state ──────────────────────────────────────────────────────────────── */
 var view='mints', tab='passed', hunting=false, rounds=0, selected=null;
 var hist=null, origin=null, acctView=null, revealed=null, defaults=null, health=null;
-var board=null, boardTimer=null, minting={};
+var board=null, boardTimer=null, minting={}, huntTimer=null, boardIdle=0;
 var seenArt=[], logLines=[], busyLabel='', signupNotice=null, statusInfo=null;
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
@@ -450,24 +450,43 @@ function toggleHunt(){ if(hunting) stopHunt(); else startHunt(); }
 
 function startHunt(){
   if(!signedIn()){ go('account'); return; }
+  idleRounds=0;
   if(!isPractice() && !confirm('Live mode spends real gas automatically whenever a '+
     'collection passes every rule.\n\nStart hunting?')) return;
   hunting=true; log(isPractice()? 'Started in practice mode.' : 'Started LIVE.');
   render(); runRound();
 }
 
-function stopHunt(){ hunting=false; log('Stopped.'); render(); }
+function stopHunt(){
+  hunting=false;
+  if(huntTimer){ clearTimeout(huntTimer); huntTimer=null; }
+  log('Stopped.'); render();
+}
 
 function isPractice(){ return localStorage.getItem('fm_practice')!=='0'; }
 function setPractice(on){ localStorage.setItem('fm_practice',on?'1':'0'); render(); }
+
+/**
+ * How long a loop may keep running with nothing to show for it.
+ *
+ * Every round is billed as active CPU on the host, so a tab nobody is watching
+ * is a meter nobody is reading. One left open overnight cost eight hours of
+ * compute and paused the account it was billed to; these two limits are what
+ * stop that happening again.
+ */
+var IDLE_ROUND_LIMIT=40;
+var HUNT_COOLDOWN_MS=45000;
+var idleRounds=0;
 
 async function runRound(single){
   rounds++; busyLabel='round '+rounds+' — listening'; render();
   try{
     var r=await api('/api/hunt?dryRun='+String(isPractice())+'&'+ruleQuery());
+    if(r.cooldownSec) HUNT_COOLDOWN_MS=Math.max(5000, r.cooldownSec*1000);
     if(r.paused){ log('Auto-mint is off for this account.'); hunting=false; }
     else if(r.skipped){ log('Skipped — a round was already running.'); }
     else{
+      idleRounds = r.mintedCollections>0 ? 0 : idleRounds+1;
       log(r.observed.mintsSeen+' mints seen · '+r.candidates.length+' checked · '+
           r.qualified+' passed'+(r.mintedCollections?' · '+r.mintedCollections+' MINTED':''));
       for(var i=0;i<r.candidates.length;i++){
@@ -482,7 +501,23 @@ async function runRound(single){
     if(/token|account|sign/i.test(e.message)) hunting=false;
   }
   busyLabel=''; render();
-  if(!single&&hunting) setTimeout(runRound,1200);
+  if(single || !hunting) return;
+
+  // Stop rather than run unattended forever. The cost of a round is paid
+  // whether or not anyone is looking at the result.
+  if(idleRounds>=IDLE_ROUND_LIMIT){
+    hunting=false;
+    log('Stopped after '+idleRounds+' rounds with nothing to mint. Press Start '+
+        'hunting to carry on — this exists so a forgotten tab does not keep '+
+        'spending compute.');
+    render();
+    return;
+  }
+  // Paused rather than stopped: switching tabs should not lose your place, but
+  // it should stop the meter.
+  if(document.hidden){ log('Paused — this tab is in the background.'); render(); return; }
+
+  huntTimer=setTimeout(runRound, HUNT_COOLDOWN_MS);
 }
 
 /* ── rules ──────────────────────────────────────────────────────────────── */
@@ -567,6 +602,10 @@ function renderMints(){
   if(busyLabel) out.push('<span class="mute" style="font-size:12px">'+
     '<span class="spin"></span> '+esc(busyLabel)+'</span>');
   out.push('</div>');
+
+  if(hunting) out.push('<div class="hint">Each round listens to the chain for a few '+
+    'seconds, which costs server time — so hunting pauses when you switch tabs and '+
+    'stops on its own after a long quiet stretch.</div>');
 
   if(logLines.length){
     out.push('<div class="log">');
@@ -780,13 +819,36 @@ var livePage=1;
 /** Everything seen this session, so a drop that scrolls out is not lost. */
 var liveHistory={};
 
+/** Refreshes before the board stops on its own. About fifteen minutes. */
+var BOARD_IDLE_LIMIT=20;
+var BOARD_INTERVAL_MS=45000;
+
 function startBoard(){
   if(boardTimer) return;
+  boardIdle=0;
   loadBoard();
-  // Each round holds the feed open for ~20s, so this paces just behind that.
-  boardTimer=setInterval(function(){ if(view==='live') loadBoard(); }, 24000);
+  // Every refresh holds the sequencer feed open on the server, and that time is
+  // billed as active CPU. Forty-five seconds between six-second samples keeps
+  // the board current at about a seventh of what it used to cost.
+  boardTimer=setInterval(function(){
+    if(view!=='live') return;
+    // A backgrounded tab still fires timers, and the server still pays for the
+    // request. Nobody is reading it, so nobody should be billed for it.
+    if(document.hidden) return;
+    if(boardIdle>=BOARD_IDLE_LIMIT){ stopBoard(); paintIdle(); return; }
+    boardIdle++;
+    loadBoard();
+  }, BOARD_INTERVAL_MS);
 }
 function stopBoard(){ if(boardTimer){ clearInterval(boardTimer); boardTimer=null; } }
+
+/** Say why the board stopped, and offer to carry on. */
+function paintIdle(){
+  var note=$('liveNote');
+  if(note) note.innerHTML='Stopped watching after '+BOARD_IDLE_LIMIT+' refreshes. '+
+    '<button class="link" onclick="startBoard()">Watch again</button> — this exists '+
+    'so a forgotten tab does not keep spending compute.';
+}
 
 async function loadBoard(){
   if(!signedIn()){ board=null; render(); return; }
@@ -821,13 +883,16 @@ async function loadBoard(){
  * reading it — so the default has to err toward showing a row, not hiding one.
  */
 function minMints(){ return localStorage.getItem('fm_minmints')||'2'; }
-function setMinMints(v){ localStorage.setItem('fm_minmints',String(v)); livePage=1; loadBoard(); }
+function setMinMints(v){
+  localStorage.setItem('fm_minmints',String(v)); livePage=1; boardIdle=0; loadBoard();
+}
 function showMore(){ livePage++; paintLive(); }
 
 function renderLive(){
   var out=['<div class="card">'];
   out.push('<div class="top">'+thumbs()+
-    '<button class="circ" onclick="loadBoard()" title="Watch again">↻</button></div>');
+    '<button class="circ" onclick="boardIdle=0;loadBoard()" title="Watch again">↻</button>'+
+    '</div>');
   out.push('<h1>Minting now</h1>');
 
   if(!signedIn()){
@@ -1508,6 +1573,28 @@ function renderRules(){
   out.push('</div>');
   return out.join('');
 }
+
+/**
+ * Stop the meter when nobody is looking.
+ *
+ * Both loops call a server that holds the sequencer feed open for the length of
+ * its sample, billed as active CPU throughout. A tab in the background is a
+ * request nobody reads and an invoice somebody pays, so the loops idle while
+ * hidden and pick up when the tab comes back.
+ */
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden){
+    if(huntTimer){ clearTimeout(huntTimer); huntTimer=null; }
+    return;
+  }
+  // Back in view: resume whichever loop was running.
+  if(hunting && !huntTimer && !busyLabel){
+    idleRounds=0;
+    log('Resumed — tab is back in view.');
+    huntTimer=setTimeout(runRound, 1000);
+  }
+  if(view==='live'){ boardIdle=0; if(!boardTimer) startBoard(); }
+});
 
 /* ── init ───────────────────────────────────────────────────────────────── */
 if(localStorage.getItem('fm_practice')===null) localStorage.setItem('fm_practice','1');

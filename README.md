@@ -389,6 +389,23 @@ Nothing you loosen makes a swap router mintable. And a contract that cannot be
 read is blocked rather than waved through, because everything left is
 feed-derived and the feed cannot tell a collection from any other busy address.
 
+### What it costs to leave running
+
+Both loops hold the sequencer feed open **inside** a serverless function, and
+usage-based compute bills a function waiting on a socket as *active* CPU for
+every second it waits. The first version sampled for 35 seconds and re-fired
+immediately — a ~97% duty cycle for as long as a tab stayed open. One tab left
+open overnight cost eight hours of CPU and paused the account it was billed to.
+
+Now: shorter samples with a real gap between them, both loops idle while the tab
+is in the background, and each stops on its own after a long quiet stretch. About
+**4x less** in active use, near zero when you walk away.
+
+It is still not cheap, because the sampling still happens inside the request. The
+actual fix is `npm run serve` on any always-on host, which holds the feed open
+once instead of paying for it by the second — see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#what-this-costs-to-run-and-how-to-make-it-cost-nothing).
+
 ### Accounts: ten wallets, generated for you
 
 Sign up and the server generates ten wallets, seals their keys, and mints from
@@ -717,7 +734,7 @@ src/
 api/[...path].ts One serverless function; dispatches to src/routes/
 src/routes/      The route handlers themselves
 public/index.html  The web UI
-test/            560 tests, incl. end-to-end runs against a mock node
+test/            562 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```

@@ -119,6 +119,62 @@ browser only and sent as a bearer token.
 
 ---
 
+## What this costs to run, and how to make it cost nothing
+
+Read this before leaving the app open.
+
+Both loops work by holding the sequencer feed open **inside** a serverless
+function. On usage-based compute a function waiting on a WebSocket is billed as
+*active* CPU for every second it waits — sleeping costs the same as working. The
+first version sampled for 35 seconds and re-fired immediately, which is a ~97%
+duty cycle for as long as a browser tab stayed open. **One tab left open
+overnight cost eight hours of CPU and paused the account it was billed to.**
+
+Four things now bound it:
+
+| | Before | Now |
+| --- | --- | --- |
+| Hunt window | 35s, re-fired after 1.2s | 15s, then a 45s gap |
+| Board window | 20s, refreshed every 24s | 6s, refreshed every 45s |
+| Backgrounded tab | kept running | **both loops idle** |
+| Forgotten tab | ran forever | hunt stops after ~40 quiet rounds, board after 20 refreshes |
+
+That is roughly **4x less** while you are actively using it, and near zero when
+you are not. `HUNT_WINDOW_SEC` and `HUNT_COOLDOWN_SEC` tune the first two.
+
+**None of that makes it cheap** — a visible hunting tab is still around 18
+minutes of CPU per hour, because the sampling still happens inside the request.
+Watch your usage page for the first day.
+
+### Making it cost nothing: run the tracker somewhere persistent
+
+The real fix is not to sample the feed from a serverless function at all. A
+process that stays alive opens the sequencer feed **once** and keeps it open, so
+there is no per-second billing and no twenty-second blind spots between samples.
+This repo already has it:
+
+```bash
+# on any always-on host — a small VPS, Fly.io, a Raspberry Pi
+git clone <your repo> && cd nftmint && npm install
+cp .env.example .env          # set NETWORK, RPC_URLS, TRACKER_AUTH_TOKEN
+npm run serve                 # holds the feed open, serves /api/collections
+```
+
+Then point the Vercel deployment at it:
+
+```
+TRACKER_UPSTREAM_URL=https://your-host:8080
+TRACKER_UPSTREAM_TOKEN=<the same TRACKER_AUTH_TOKEN>
+```
+
+Vercel then serves the UI and proxies, and its CPU use drops to ordinary API
+levels. The bot also gets *better*: continuous coverage instead of samples, and
+no cold start on the mint path — which matters on a chain that orders
+first-come-first-served, where the delay before your bytes leave is the whole
+race.
+
+---
+
 ## Why there is one function, not fourteen
 
 Every `/api/*` request goes through a single serverless function,

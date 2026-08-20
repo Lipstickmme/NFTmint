@@ -549,6 +549,7 @@ export function loadHuntRuntime(
  */
 export function loadHuntConfig(env: NodeJS.ProcessEnv = process.env): {
   windowSec: number;
+  cooldownSec: number;
   inspectTop: number;
   maxMintsPerCycle: number;
   dryRun: boolean;
@@ -569,8 +570,38 @@ export function loadHuntConfig(env: NodeJS.ProcessEnv = process.env): {
   const { optNumber, optBool, opt } = createEnvReader(env);
 
   return {
-    // Leaves room inside a 60s function budget for inspection and minting.
-    windowSec: optNumber('HUNT_WINDOW_SEC', 35),
+    /**
+     * Seconds spent listening to the feed per round.
+     *
+     * This is the single most expensive number in the deployment. A serverless
+     * function waiting on a WebSocket is billed as *active* CPU for every
+     * second it waits, so a 35-second window was 35 seconds of billed compute
+     * per round — and with the browser re-firing immediately, that ran at a
+     * ~97% duty cycle for as long as a tab stayed open. One overnight tab cost
+     * eight hours of CPU and paused the account it was billed to.
+     *
+     * Fifteen seconds still covers the tracker's velocity window, so a burst is
+     * measured the same way; it just costs less than half as much to see it.
+     * The bigger saving is the cooldown below.
+     */
+    windowSec: optNumber('HUNT_WINDOW_SEC', 15),
+    /**
+     * Seconds to wait between rounds.
+     *
+     * Shortening the window alone saves nothing if the next round starts
+     * immediately — the same wall-clock time is still billed, just in smaller
+     * pieces. The gap is what actually lowers the duty cycle, from ~97% to
+     * around 30%. A drop that is worth catching lasts minutes, so sampling
+     * fifteen seconds out of every sixty still finds one — and a drop that
+     * sells out inside a single gap was never catchable from a serverless
+     * function anyway, whatever the setting.
+     *
+     * Lower it if you are running somewhere the compute is free; raise it if a
+     * bill is arriving. `npm run serve` on a persistent host makes the whole
+     * question go away, because a process that stays alive holds the feed open
+     * once instead of paying for it by the second.
+     */
+    cooldownSec: optNumber('HUNT_COOLDOWN_SEC', 45),
     inspectTop: optNumber('HUNT_INSPECT_TOP', 6),
     maxMintsPerCycle: optNumber('HUNT_MAX_MINTS_PER_CYCLE', 2),
     // Live by default, so the bot actually mints once armed. Set

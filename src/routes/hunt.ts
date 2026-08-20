@@ -145,9 +145,12 @@ async function runAndRespond(
       // while the browser is already hunting is exactly that case.
       const outcome = await withSingleFlight('hunt', () =>
         runHuntCycle({
+          // Capped at 20 rather than 50. Every second here is a second of
+          // billed active CPU, and a caller asking for a long window is asking
+          // the deployment to spend money it may not have.
           windowSec: Math.min(
             Math.max(Number.isFinite(windowSec) ? windowSec : cfg.windowSec, 5),
-            50,
+            20,
           ),
           inspectTop: cfg.inspectTop,
           maxMintsPerCycle: cfg.maxMintsPerCycle,
@@ -176,6 +179,10 @@ async function runAndRespond(
         ...outcome.value,
         appliedOverrides: applied,
         serverForcesDryRun: cfg.dryRun,
+        // The page paces its loop from this rather than guessing, so the gap
+        // between rounds is a deployment setting and not a hardcoded number in
+        // someone's browser.
+        cooldownSec: cfg.cooldownSec,
       };
     },
   );

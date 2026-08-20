@@ -180,7 +180,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        build: { uiVersion: '13-rows', commit: 'testing', deployedAt: 'local' },
+        build: { uiVersion: '14-budget', commit: 'testing', deployedAt: 'local' },
         configured: {
           apiToken: true, privateKeys: true, rpcUrls: true, network: 'testnet',
           spendCeilingEth: '0.05', upstreamTracker: false,
@@ -665,6 +665,82 @@ describe.skipIf(!chromiumPath)('the app in a browser', () => {
     expect(errors).toEqual([]);
     await page.close();
   });
+
+  it('stops watching when the tab goes into the background', async () => {
+    // Every refresh holds the sequencer feed open on the server and is billed
+    // as active CPU. A backgrounded tab is a request nobody reads and an
+    // invoice somebody pays — one left open overnight cost eight hours of
+    // compute and paused the account it was billed to.
+    const { page, errors } = await openPage();
+
+    // Headless Chromium never reports a page as hidden, so drive the property
+    // the handler actually reads. This tests our logic, not the browser's.
+    await page.evaluate(() => {
+      let hidden = false;
+      Object.defineProperty(document, 'hidden', { get: () => hidden, configurable: true });
+      (window as unknown as { setHidden: (v: boolean) => void }).setHidden = (v) => {
+        hidden = v;
+        document.dispatchEvent(new Event('visibilitychange'));
+      };
+    });
+
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        stopBoard: () => void; startBoard: () => void; BOARD_INTERVAL_MS: number;
+      };
+      w.stopBoard();
+      w.BOARD_INTERVAL_MS = 400;
+      w.startBoard();
+    });
+
+    await page.waitForTimeout(1200);
+    const before = await page.evaluate(
+      () => (window as unknown as { boardIdle: number }).boardIdle);
+    expect(before).toBeGreaterThan(0);
+
+    await page.evaluate(() =>
+      (window as unknown as { setHidden: (v: boolean) => void }).setHidden(true));
+    const atPause = await page.evaluate(
+      () => (window as unknown as { boardIdle: number }).boardIdle);
+    await page.waitForTimeout(1500);
+
+    // Nothing advanced while hidden.
+    expect(await page.evaluate(
+      () => (window as unknown as { boardIdle: number }).boardIdle)).toBe(atPause);
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 30_000);
+
+  it('stops watching on its own after a long quiet stretch', async () => {
+    // The other half: a tab left in the foreground and forgotten.
+    const { page, errors } = await openPage();
+    await page.click('#navLive');
+    await page.waitForSelector('.mintcard', { timeout: 15_000 });
+
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        stopBoard: () => void; startBoard: () => void;
+        BOARD_INTERVAL_MS: number; BOARD_IDLE_LIMIT: number;
+      };
+      w.stopBoard();
+      w.BOARD_INTERVAL_MS = 300;
+      w.BOARD_IDLE_LIMIT = 2;
+      w.startBoard();
+    });
+
+    await page.waitForFunction(
+      () => (document.getElementById('liveNote')?.textContent ?? '').includes('Stopped watching'),
+      null, { timeout: 15_000 });
+
+    // And it says why, with a way to carry on.
+    const note = await page.textContent('#liveNote');
+    expect(note).toMatch(/spending compute/i);
+    expect(await page.locator('#liveNote button:has-text("Watch again")').count()).toBe(1);
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 30_000);
 
   it('refuses to render a javascript: URL from collection metadata', async () => {
     const { page, errors } = await openPage();

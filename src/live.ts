@@ -150,7 +150,16 @@ export interface LiveOptions {
 }
 
 export const DEFAULT_LIVE_OPTIONS: LiveOptions = {
-  windowSec: 20,
+  /**
+   * Seconds spent listening to the feed.
+   *
+   * Billed as active CPU for every one of them — a serverless function waiting
+   * on a WebSocket costs the same as one doing work. At twenty seconds, with
+   * the page refreshing every twenty-four, this ran at a ~100% duty cycle for
+   * as long as the tab was open. Six seconds refreshed every forty-five is
+   * about a seventh of the cost and still shows what is happening.
+   */
+  windowSec: 6,
   /**
    * Low on purpose.
    *
