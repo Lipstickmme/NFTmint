@@ -43,6 +43,8 @@ export interface AutoMintCall {
   buildFor: (wallet: Address) => Hex;
   /** How this candidate was derived, for the report. */
   strategy: 'address-swap' | 'abi-decode' | 'verbatim';
+  /** The same thing, in words, for anything a person reads. */
+  label: string;
   signature?: string;
   /** Plain-language account of what will be sent and why. */
   describe: string;
@@ -138,6 +140,7 @@ export function buildAutoMintCalls(input: AutoMintInput): AutoMintCall[] {
     if (swapped) {
       add({
         strategy: 'address-swap',
+        label: 'swap your address in',
         describe:
           'Copied a working mint and replaced the minter\'s address with yours. ' +
           'This needs no knowledge of the contract.',
@@ -160,6 +163,7 @@ export function buildAutoMintCalls(input: AutoMintInput): AutoMintCall[] {
         if (hasAddress) {
           add({
             strategy: 'abi-decode',
+            label: 'rebuild it from the ABI',
             signature,
             describe: `Recognised ${signature}; kept the observed arguments and set the ` +
               'recipient to your wallet.',
@@ -181,6 +185,7 @@ export function buildAutoMintCalls(input: AutoMintInput): AutoMintCall[] {
   //    which is the common case for free drops.
   add({
     strategy: 'verbatim',
+    label: 'replay it exactly',
     signature,
     describe: signature
       ? `Replayed a working ${signature} call exactly.`

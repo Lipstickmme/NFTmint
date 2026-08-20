@@ -188,7 +188,7 @@
 
 <script>
 'use strict';
-var PAGE_VERSION = '9-replay';
+var PAGE_VERSION = '10-plainerrors';
 
 /* ── state ──────────────────────────────────────────────────────────────── */
 var view='mints', tab='passed', hunting=false, rounds=0, selected=null;
@@ -868,10 +868,15 @@ function renderUserAccount(){
     '<button onclick="revealKeys()">Show private keys</button></div>');
   out.push('</div>');
 
-  out.push('<div class="card flat"><div class="k">Wallets</div><div style="margin-top:12px">');
+  // Ten addresses is a wall, and it is not what you came to this screen for.
+  // Collapsed by default, with the one number that matters in the summary.
   var ws=(acctView&&acctView.wallets)||[];
   if(!ws.length && acctView && acctView.addresses)
     for(var q=0;q<acctView.addresses.length;q++) ws.push({address:acctView.addresses[q],balanceEth:'—'});
+
+  out.push('<details class="card flat"><summary>Wallet addresses ('+esc(ws.length)+
+    ') — tap to show</summary>');
+  out.push('<div style="margin-top:14px">');
   for(var j=0;j<ws.length;j++){
     out.push('<div class="row static"><div class="grow">'+
       '<div class="k">'+esc(j+1)+'</div>'+
@@ -880,9 +885,11 @@ function renderUserAccount(){
       '<span class="glyph mute" style="font-size:11px">ETH</span></div></div>');
   }
   out.push('</div>');
+  out.push('<div class="acts"><button onclick="copyAddresses()">Copy all addresses</button>'+
+    '<span id="copyState" class="mute" style="font-size:12px"></span></div>');
   out.push('<div class="hint">Send a small amount of ETH to each. Ten funded wallets means '+
     'ten mints where one wallet would get one.</div>');
-  out.push('</div>');
+  out.push('</details>');
 
   if(revealed){
     out.push('<div class="card flat"><div class="k">Private keys</div>');
@@ -919,6 +926,19 @@ function renderUserAccount(){
 }
 
 function hideKeys(){ revealed=null; render(); }
+
+/* Funding ten wallets by hand means ten copies; one button is kinder. */
+function copyAddresses(){
+  var ws=(acctView&&acctView.wallets)||[], list=[];
+  for(var i=0;i<ws.length;i++) list.push(ws[i].address);
+  if(!list.length && acctView && acctView.addresses) list=acctView.addresses;
+  var text=list.join('\n');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){
+      $('copyState').textContent='copied '+list.length; },
+      function(){ $('copyState').textContent='could not copy'; });
+  } else { $('copyState').textContent='copying is not available here'; }
+}
 
 async function clearRpc(){ $('rpc').value=''; await saveRpc(); }
 

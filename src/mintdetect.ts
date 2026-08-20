@@ -64,6 +64,11 @@ export const SELECTOR_TO_SIGNATURE: ReadonlyMap<Hex, string> = new Map(
  * Cheap, and it keeps the busiest traffic on any chain — transfers, approvals,
  * swaps — out of the tracker entirely, so widening detection does not just mean
  * tracking everything.
+ *
+ * This list saves round trips; it is not the safety net. Enumerating every
+ * router entrypoint is a losing game, and a swap router that slips past it still
+ * has to answer for itself: before anything is sent, the contract is asked
+ * whether it is an ERC-721 or ERC-1155, and a no — or a silence — is fatal.
  */
 const NOT_MINT_SIGNATURES = [
   'transfer(address,uint256)',
@@ -79,8 +84,21 @@ const NOT_MINT_SIGNATURES = [
   'swapExactTokensForTokens(uint256,uint256,address[],address,uint256)',
   'swapExactETHForTokens(uint256,address[],address,uint256)',
   'exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))',
+  'exactInput((bytes,address,uint256,uint256,uint256))',
+  'exactOutputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))',
+  'swapExactTokensForETH(uint256,uint256,address[],address,uint256)',
+  'swapETHForExactTokens(uint256,address[],address,uint256)',
+  'swapTokensForExactTokens(uint256,uint256,address[],address,uint256)',
+  'swapExactTokensForTokensSupportingFeeOnTransferTokens(uint256,uint256,address[],address,uint256)',
+  'addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)',
+  'addLiquidityETH(address,uint256,uint256,uint256,address,uint256)',
+  'removeLiquidity(address,address,uint256,uint256,uint256,address,uint256)',
   'multicall(bytes[])',
+  'multicall(uint256,bytes[])',
   'execute(bytes,bytes[],uint256)',
+  'execute(bytes,bytes[])',
+  'unwrapWETH9(uint256,address)',
+  'wrapETH(uint256)',
 ] as const;
 
 export const NOT_MINT_SELECTORS: ReadonlySet<Hex> = new Set(

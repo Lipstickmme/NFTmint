@@ -47,11 +47,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
     clients.map(async (client) => {
       try {
         const rtt = await client.measureLatency(3);
-        log.info('endpoint ready', { endpoint: client.endpoint, medianRttMs: rtt.toFixed(1) });
+        log.info('endpoint ready', { endpoint: client.label, medianRttMs: rtt.toFixed(1) });
         return { client, rtt };
       } catch (err) {
         log.warn('endpoint unreachable', {
-          endpoint: client.endpoint,
+          endpoint: client.label,
           error: err instanceof Error ? err.message : String(err),
         });
         return { client, rtt: Number.POSITIVE_INFINITY };
@@ -77,7 +77,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   );
   for (const client of submitOnlyClients) {
     clients.push(client);
-    log.info('submit-only endpoint armed', { endpoint: client.endpoint });
+    log.info('submit-only endpoint armed', { endpoint: client.label });
   }
 
   const submitClients = [...submitOnlyClients, ...healthy.map((h) => h.client)];

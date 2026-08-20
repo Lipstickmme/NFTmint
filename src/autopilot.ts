@@ -362,7 +362,7 @@ export async function runAutopilot(params: {
     clients.map((c) =>
       c.warm(2).catch((err: unknown) => {
         log.warn('warm failed', {
-          endpoint: c.endpoint,
+          endpoint: c.label,
           error: err instanceof Error ? err.message : String(err),
         });
       }),

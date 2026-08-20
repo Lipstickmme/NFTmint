@@ -243,7 +243,7 @@ describe('a hunt cycle records what it found', () => {
     expect(kept[0].uniqueMinters).toBe(12);
     expect(kept[0].remaining).toBe('200');
     // Dry run signs everything and sends nothing; the record has to say so.
-    expect(kept[0].outcome).toMatch(/practice mode/);
+    expect(kept[0].outcome).toMatch(/Practice mode/);
     expect(kept[0].score).toBe(100);
   }, 20_000);
 

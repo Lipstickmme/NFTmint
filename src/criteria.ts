@@ -297,7 +297,26 @@ export function evaluate(
   // indistinguishable from a hot drop — same shape, same velocity, same crowd.
   // The only thing that tells them apart is asking the contract, and getting it
   // wrong means sending copied calldata to something that is not a mint at all.
-  if (info) {
+  if (!info) {
+    // No contract data at all — the read failed, or the contract answers
+    // nothing. Everything left is feed-derived, and the feed cannot tell a
+    // collection from a swap router. This was the hole a real Swap Router came
+    // through: inspection threw, every contract check was skipped, and it
+    // qualified on velocity alone.
+    checks.push({
+      name: 'is an NFT',
+      passed: false,
+      actual: 'could not read the contract',
+      required: 'ERC-721 or ERC-1155',
+      why:
+        'Nothing could be read from this address, so there is no evidence it is a ' +
+        'collection rather than any other busy contract. Velocity alone cannot tell ' +
+        'them apart.',
+      score: 0,
+      weight: 4,
+      blocking: true,
+    });
+  } else {
     if (info.isNft !== undefined) {
       checks.push({
         name: 'is an NFT',

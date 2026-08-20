@@ -212,8 +212,10 @@ export async function inspectContract(
     };
   }
 
-  const [nameRaw, symbolRaw, totalSupply, maxSupply, priceWei, saleOpen, owned, isNft] =
-    await Promise.all([
+  const [
+    nameRaw, symbolRaw, totalSupply, maxSupply, priceWei, saleOpen, owned, isNft,
+    decimalsRaw, tokenUri,
+  ] = await Promise.all([
       probe(client, contract, 'name()'),
       probe(client, contract, 'symbol()'),
       probeFirst(client, contract, SUPPLY_FNS, decodeUint),
@@ -222,15 +224,25 @@ export async function inspectContract(
       probeFirst(client, contract, SALE_OPEN_FNS, decodeBool),
       wallet ? balanceOf(client, contract, wallet) : Promise.resolve(undefined),
       supportsNftInterface(client, contract),
+      // Positive and negative tells, for contracts that skip ERC-165.
+      probe(client, contract, 'decimals()'),
+      probeFirst(client, contract, ['tokenURI(uint256)', 'uri(uint256)'], (raw) => raw),
     ]);
 
+  // Anything with `decimals()` is a fungible token, not a collection. Worth
+  // testing for explicitly: an ERC-20 has a name and a totalSupply too, so the
+  // shape test alone would wave one straight through.
+  const fungible = decimalsRaw !== undefined;
   const info: ContractInfo = {
     contract,
     hasCode: true,
-    isNft,
-    // The fallback for contracts that skip ERC-165: metadata plus a supply
-    // read is what an NFT looks like and a router or a pool does not.
-    looksLikeNft: Boolean(nameRaw) && (totalSupply !== undefined || maxSupply !== undefined),
+    isNft: isNft ?? (fungible ? false : undefined),
+    // For contracts that skip ERC-165: a per-token URI is something only an
+    // NFT has, and a name plus a supply is the weaker second-best.
+    looksLikeNft:
+      !fungible &&
+      (tokenUri !== undefined ||
+        (Boolean(nameRaw) && (totalSupply !== undefined || maxSupply !== undefined))),
     name: nameRaw ? decodeString(nameRaw) : undefined,
     symbol: symbolRaw ? decodeString(symbolRaw) : undefined,
     totalSupply,
@@ -304,7 +316,9 @@ function describe(info: ContractInfo): string {
   if (info.name) parts.push(info.name + (info.symbol ? ` (${info.symbol})` : ''));
 
   if (info.isNft === false) {
-    parts.push('NOT an NFT contract — it says it is neither ERC-721 nor ERC-1155');
+    parts.push('NOT an NFT — it is a fungible token or says it is neither ERC-721 nor ERC-1155');
+  } else if (info.isNft === undefined && !info.looksLikeNft) {
+    parts.push('does not look like an NFT contract');
   }
 
   if (info.soldOut) {

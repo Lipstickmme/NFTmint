@@ -100,7 +100,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        build: { uiVersion: '9-replay', commit: 'testing', deployedAt: 'local' },
+        build: { uiVersion: '10-plainerrors', commit: 'testing', deployedAt: 'local' },
         configured: {
           apiToken: true, privateKeys: true, rpcUrls: true, network: 'testnet',
           spendCeilingEth: '0.05', upstreamTracker: false,
@@ -327,12 +327,19 @@ describe.skipIf(!chromiumPath)('the app in a browser', () => {
     await page.close();
   });
 
-  it('lists all ten wallets with their balances', async () => {
+  it('keeps the ten addresses out of the way until asked for', async () => {
+    // Ten addresses is a wall, and not what you open this screen for. The
+    // number that matters stays visible; the list is one tap away.
     const { page, errors } = await openPage();
     await page.click('#navAccount');
-    await page.waitForSelector('.row.static', { timeout: 8000 });
-    expect(await page.locator('.row.static').count()).toBe(10);
+    await page.waitForSelector('summary:has-text("Wallet addresses")', { timeout: 8000 });
+
     expect(await page.textContent('#app')).toContain('3 of 10 wallets funded');
+    expect(await page.locator('.row.static:visible').count()).toBe(0);
+
+    await page.click('summary:has-text("Wallet addresses")');
+    await page.waitForSelector('.row.static:visible', { timeout: 8000 });
+    expect(await page.locator('.row.static:visible').count()).toBe(10);
     expect(errors).toEqual([]);
     await page.close();
   });

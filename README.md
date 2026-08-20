@@ -363,13 +363,29 @@ The trap this is all built around: replaying an observed `mint(address,uint256)`
 verbatim mints the NFT **to the wallet you copied from** — a silent, total
 failure that still costs full gas and returns a successful receipt.
 
-One consequence of widening detection needed closing. On the feed, a busy router
-with three hundred distinct callers looks exactly like a hot drop: same shape,
-same velocity, same crowd. So before anything is sent, the contract is asked
-over ERC-165 whether it is an ERC-721 or ERC-1155. If it answers no, that is a
-blocking rule — score zero, no partial credit. If it does not implement ERC-165
-at all (plenty of older collections don't), it has to at least expose the
-metadata and supply an NFT normally would.
+One consequence of widening detection needed closing, and the first version
+did not close it far enough — a live **Swap Router** reached "1 passed" and was
+sent a mint. Two holes: a failed contract read left `info` undefined, which
+skipped every contract check including the NFT one; and the fallback test
+(a name plus a supply) describes every ERC-20 as well as every collection.
+
+Now: on the feed, a busy router with three hundred
+distinct callers looks exactly like a hot drop — same shape, same velocity,
+same crowd — so the contract has to answer for itself before anything is sent.
+
+| The contract says | Verdict |
+| --- | --- |
+| ERC-165: yes, ERC-721 or ERC-1155 | pass |
+| ERC-165: neither | **blocked** |
+| has `decimals()` | **blocked** — fungible token, not a collection |
+| no ERC-165, but has `tokenURI`/`uri` | pass |
+| no ERC-165, but has a name and a supply | pass |
+| nothing readable at all | **blocked** |
+
+Blocked is blocking: score zero, no partial credit, never in the "close" list.
+Nothing you loosen makes a swap router mintable. And a contract that cannot be
+read is blocked rather than waved through, because everything left is
+feed-derived and the feed cannot tell a collection from any other busy address.
 
 ### Accounts: ten wallets, generated for you
 
@@ -617,7 +633,7 @@ src/
   cli.ts         Command-line entry point
 api/             Vercel serverless routes
 public/index.html  The web UI
-test/            457 tests, incl. end-to-end runs against a mock node
+test/            492 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```

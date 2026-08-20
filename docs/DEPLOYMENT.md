@@ -143,6 +143,14 @@ environment only, and there's a test asserting exactly that.
 The checklist below is the current state, including the parts that are only
 partly closed. Each line has tests behind it.
 
+**Endpoints**
+
+- An RPC URL carries the API key in its path. Nothing prints one: errors, logs
+  and the status response all go through a redaction that keeps only the host.
+  This was a live leak — an operator's Alchemy key was rendered into a "not
+  minted" line in the browser — and there is a test that drives a JSON-RPC error
+  through a keyed endpoint and asserts the key does not survive.
+
 **Keys**
 
 - Generated private keys are sealed with AES-256-GCM under `ACCOUNT_ENCRYPTION_KEY`

@@ -16,6 +16,7 @@ import { submitAll, waitForReceipts } from './submit.js';
 import { loadWallets, NonceManager, type Wallet } from './wallet.js';
 import { explorerTxUrl } from './chain.js';
 import { errorMessage } from './http.js';
+import { explainChainError, WHY_A_MINT_FAILS } from './explain.js';
 import { isClose, toFinding } from './findings.js';
 import { recordFinding } from './store.js';
 import { log } from './logger.js';
@@ -350,9 +351,8 @@ async function mintCandidate(
     return {
       ...empty,
       error:
-        `no working mint transaction was captured for this collection, so there is ` +
-        `nothing to copy. This usually means it was flagged from very few attempts. ` +
-        `It will resolve on its own once more people mint it.`,
+        'No working mint has been captured for this collection yet, so there is ' +
+        'nothing to copy. That fixes itself as more people mint it.',
     };
   }
 
@@ -375,7 +375,7 @@ async function mintCandidate(
       call = candidate;
       break;
     } catch (err) {
-      rejected.push(`${candidate.strategy}: ${errorMessage(err)}`);
+      rejected.push(`${candidate.label} — ${explainChainError(err)}`);
     }
   }
 
@@ -383,10 +383,8 @@ async function mintCandidate(
     return {
       ...empty,
       error:
-        `every way of reproducing this mint was rejected on chain, so nothing was sent. ` +
-        `Tried ${rejected.length} — ${rejected.join(' | ')}. Common causes are a ` +
-        `per-wallet limit already reached, an allowlist you are not on, or the sale ` +
-        `closing between the scan and the attempt.`,
+        `Nothing was sent: every way of building this mint was rejected. ` +
+        `Tried ${rejected.join('; ')}. ${WHY_A_MINT_FAILS}`,
     };
   }
 
@@ -437,8 +435,8 @@ async function mintCandidate(
     return {
       ...empty,
       error:
-        `no wallet holds enough ETH for gas (${formatEther(perTxCost)} needed per mint). ` +
-        `Fund them with ETH bridged onto this chain.`,
+        `No wallet holds enough ETH for gas — about ${formatEther(perTxCost)} is needed ` +
+        `per mint. Send ETH to the addresses on your account screen.`,
     };
   }
   if (unfunded.length > 0) {
@@ -479,8 +477,8 @@ async function mintCandidate(
         accepted: false,
       })),
       error:
-        'practice mode — everything was prepared and signed, but nothing was sent. ' +
-        'Switch to live in the header to buy for real.',
+        'Practice mode — everything was prepared and signed, but nothing was sent. ' +
+        'Switch to Live to mint for real.',
     };
   }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { RpcClient, JsonRpcError, encodeRpcBody, raceSubmit } from '../src/rpc.js';
+import { RpcClient, JsonRpcError, encodeRpcBody, raceSubmit, redactEndpoint } from '../src/rpc.js';
 
 /**
  * These run against a real local HTTP server rather than a mocked transport, so
@@ -215,7 +215,7 @@ describe('raceSubmit', () => {
       const { winner, all } = await raceSubmit([slowClient, fastClient], body);
 
       expect(winner.error).toBeUndefined();
-      expect(winner.endpoint).toBe(fast.url);
+      expect(winner.endpoint).toBe(redactEndpoint(fast.url));
 
       // The slow endpoint still received the broadcast — that redundancy is the
       // point, so one degraded provider cannot cost the mint.
@@ -244,7 +244,7 @@ describe('raceSubmit', () => {
       const body = encodeRpcBody('eth_sendRawTransaction', ['0x01']);
       const { winner } = await raceSubmit([badClient, goodClient], body);
       expect(winner.error).toBeUndefined();
-      expect(winner.endpoint).toBe(good.url);
+      expect(winner.endpoint).toBe(redactEndpoint(good.url));
     } finally {
       goodClient.destroy();
       badClient.destroy();
@@ -272,5 +272,62 @@ describe('raceSubmit', () => {
 
   it('throws when given no endpoints', async () => {
     await expect(raceSubmit([], '{}')).rejects.toThrow(/no endpoints/);
+  });
+});
+
+describe('endpoint redaction', () => {
+  it('reduces an endpoint to its host', () => {
+    // The leak this closes: an Alchemy key sitting in the path of an RPC URL
+    // reached a "not minted" line rendered in the browser.
+    expect(redactEndpoint('https://robinhood-mainnet.g.alchemy.com/v2/My-secret-key'))
+      .toBe('robinhood-mainnet.g.alchemy.com');
+  });
+
+  it('keeps the port, so two local nodes stay distinguishable', () => {
+    expect(redactEndpoint('http://127.0.0.1:8545/')).toBe('127.0.0.1:8545');
+  });
+
+  it('drops a key passed as a query parameter too', () => {
+    expect(redactEndpoint('https://rpc.example.com/?apiKey=secret')).toBe('rpc.example.com');
+  });
+
+  it('says nothing at all rather than echoing an unparseable string', () => {
+    expect(redactEndpoint('not a url')).toBe('endpoint');
+  });
+
+  it('never lets a key reach a JSON-RPC error message', async () => {
+    const secret = 'My-fZX7gXMl8HspTl5Mq';
+    const server = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        const { id } = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({
+          jsonrpc: '2.0', id,
+          error: { code: 3, message: 'execution reverted' },
+        }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as AddressInfo;
+
+    const client = new RpcClient(`http://127.0.0.1:${port}/v2/${secret}`);
+    const message = await client.call('eth_call', []).then(
+      () => 'no error', (e: Error) => e.message,
+    );
+
+    expect(message).not.toContain(secret);
+    expect(message).toContain('execution reverted');
+    client.destroy();
+    server.closeAllConnections?.();
+    await new Promise<void>((r) => server.close(() => r()));
+  });
+
+  it('exposes the safe label on the client', () => {
+    const client = new RpcClient('https://rpc.example.com/v2/secret');
+    expect(client.label).toBe('rpc.example.com');
+    expect(client.label).not.toContain('secret');
+    client.destroy();
   });
 });

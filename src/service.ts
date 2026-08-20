@@ -132,15 +132,16 @@ export async function getStatus(env: NodeJS.ProcessEnv = process.env): Promise<S
       clients.map(async (client) => {
         try {
           const rtt = await client.measureLatency(3);
-          endpoints.push({ url: client.endpoint, medianRttMs: Number(rtt.toFixed(1)) });
+          endpoints.push({ url: client.label, medianRttMs: Number(rtt.toFixed(1)) });
         } catch (err) {
-          endpoints.push({ url: client.endpoint, error: errorMessage(err) });
+          endpoints.push({ url: client.label, error: errorMessage(err) });
         }
       }),
     );
 
+    // Matched on the redacted label, because that is what was recorded above.
     const healthy = clients.find((c) =>
-      endpoints.some((e) => e.url === c.endpoint && e.error === undefined),
+      endpoints.some((e) => e.url === c.label && e.error === undefined),
     );
 
     let observedChainId: number | undefined;

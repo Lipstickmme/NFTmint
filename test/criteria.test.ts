@@ -202,6 +202,13 @@ describe('evaluate', () => {
     expect(result.score).toBe(0);
   });
 
+  it('refuses a fungible token wearing collection clothes', () => {
+    // An ERC-20 has a name and a totalSupply, so the shape test alone waves one
+    // through. `decimals()` is the tell.
+    const result = evaluate(hot(), criteria, info({ isNft: false, looksLikeNft: false }));
+    expect(failedNames(result.checks)).toContain('is an NFT');
+  });
+
   it('accepts an older collection that does not answer ERC-165', () => {
     // Plenty of real ERC-721s predate it, so silence cannot be a rejection.
     const result = evaluate(hot(), criteria, info({ isNft: undefined, looksLikeNft: true }));
@@ -225,9 +232,14 @@ describe('evaluate', () => {
     expect(supply?.skipped).toBe(true);
   });
 
-  it('works with no contract data at all', () => {
+  it('refuses a collection it could not read at all', () => {
+    // This is the hole a live Swap Router came through: inspection failed, so
+    // every contract check was skipped and it qualified on feed velocity alone
+    // — which cannot tell a collection from any other busy contract.
     const result = evaluate(hot(), criteria, undefined);
-    expect(result.passed).toBe(true);
+    expect(result.passed).toBe(false);
+    expect(failedNames(result.checks)).toContain('is an NFT');
+    expect(result.score).toBe(0);
   });
 
   it('explains every check it applied', () => {

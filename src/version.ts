@@ -9,7 +9,7 @@
  * UI_VERSION is bumped by hand whenever the interface changes shape enough that
  * someone might otherwise mistake an old copy for a bug.
  */
-export const UI_VERSION = '9-replay';
+export const UI_VERSION = '10-plainerrors';
 
 /**
  * Vercel exposes the deploying commit as VERCEL_GIT_COMMIT_SHA. Absent when

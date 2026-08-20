@@ -26,12 +26,29 @@ export interface RpcError {
   data?: unknown;
 }
 
+/**
+ * An endpoint reduced to something safe to print.
+ *
+ * RPC URLs carry the API key in the path — `.../v2/My-fZX7gXMl8HspTl5Mq` — and
+ * an endpoint string reaches error messages, server logs, and the status
+ * response. One of those is rendered in a browser, which is how an operator's
+ * Alchemy key ended up on screen in a "not minted" line. Only the host is ever
+ * printed now: enough to tell two endpoints apart, nothing worth stealing.
+ */
+export function redactEndpoint(endpoint: string): string {
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return 'endpoint';
+  }
+}
+
 export class JsonRpcError extends Error {
   readonly code: number;
   readonly data?: unknown;
 
   constructor(err: RpcError, endpoint: string) {
-    super(`${err.message} (code ${err.code}) [${endpoint}]`);
+    super(`${err.message} (code ${err.code}) [${redactEndpoint(endpoint)}]`);
     this.name = 'JsonRpcError';
     this.code = err.code;
     this.data = err.data;
@@ -94,6 +111,16 @@ export class RpcClient {
   }
 
   /**
+   * The endpoint, safe to print.
+   *
+   * Anything that names an endpoint in a message, a log line, or a response
+   * must use this rather than `endpoint`, which carries the API key.
+   */
+  get label(): string {
+    return redactEndpoint(this.endpoint);
+  }
+
+  /**
    * Send a pre-serialized JSON-RPC body. This is the hot path: it performs no
    * serialization, no validation, and no allocation beyond what Node requires
    * to write the request.
@@ -125,7 +152,8 @@ export class RpcClient {
             } catch {
               reject(
                 new Error(
-                  `Non-JSON response from ${this.endpoint} (HTTP ${res.statusCode}): ${text.slice(0, 300)}`,
+                  `Non-JSON response from ${this.label} (HTTP ${res.statusCode}): ` +
+                    text.slice(0, 300),
                 ),
               );
               return;
@@ -146,7 +174,9 @@ export class RpcClient {
       });
 
       req.setTimeout(this.timeoutMs, () => {
-        req.destroy(new Error(`RPC timeout after ${this.timeoutMs}ms [${this.endpoint}]`));
+        req.destroy(
+          new Error(`RPC timeout after ${this.timeoutMs}ms [${this.label}]`),
+        );
       });
       req.on('error', reject);
       req.end(body);
@@ -239,10 +269,10 @@ export async function raceSubmit(
   const attempts = clients.map(async (client): Promise<RaceResult> => {
     try {
       const result = await client.sendRaw(body);
-      return { endpoint: client.endpoint, elapsedMs: performance.now() - started, result };
+      return { endpoint: client.label, elapsedMs: performance.now() - started, result };
     } catch (err) {
       return {
-        endpoint: client.endpoint,
+        endpoint: client.label,
         elapsedMs: performance.now() - started,
         error: err instanceof Error ? err : new Error(String(err)),
       };
