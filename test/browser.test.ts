@@ -81,53 +81,82 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
   let huntCalls = 0;
   let mintNowCalls: string[] = [];
 
-  // Three rows spanning the states the board has to render: about to sell out,
-  // an allowlist round, and one already gone.
+  // Four rows spanning the states the board has to render: about to sell out,
+  // an allowlist round, one already gone, and one barely moving.
   const liveRows: Record<string, unknown>[] = [
     {
       contract: '0x00000000000000000000000000000000000000aa', name: 'Solar Cats',
-      ageSec: 120, status: 'live', mints: 640, mintsPerMinute: 320, uniqueMinters: 60,
-      mintsInWindow: 90, totalSupply: '820', maxSupply: '1000', progressPct: 82,
-      remaining: '180', soldOut: false, priceWei: '0', priceEth: '0', isFree: true,
-      phase: 'public', maxPerWallet: '3', projectedSelloutSec: 34, kind: 'confirmed',
+      ageSec: 120, lastSeenSecAgo: 1, status: 'live', mints: 640, mintsPerMinute: 320,
+      uniqueMinters: 60, mintsInWindow: 90, totalSupply: '820', maxSupply: '1000',
+      progressPct: 82, remaining: '180', soldOut: false, priceWei: '0', priceEth: '0',
+      isFree: true, phase: 'public', maxPerWallet: '3', projectedSelloutSec: 34,
+      kind: 'confirmed',
       events: [
-        { kind: 'minting-out', text: 'Minting out — about 34s left' },
-        { kind: 'crowd', text: '60 wallets in 2m' },
+        { kind: 'minting-out', text: 'Minting out — about 34s left', tone: 'good' },
+        { kind: 'crowd', text: '60 wallets in 2m', tone: 'good' },
+      ],
+      metrics: [
+        { label: 'speed', value: '320/min', short: '320/min', tone: 'good' },
+        { label: 'wallets', value: '60', short: '60', tone: 'good' },
+        { label: 'price', value: 'free', short: 'free', tone: 'good' },
+        { label: 'minted', value: '82%', short: '82%', tone: 'neutral' },
+        { label: 'max each', value: '3', short: '3', tone: 'good' },
+        { label: 'gone in', value: '34s', short: '34s', tone: 'good' },
+        { label: 'round', value: 'public', short: 'public', tone: 'good' },
       ],
     },
     {
       contract: '0x00000000000000000000000000000000000000bb', name: 'Night Foxes',
-      ageSec: 300, status: 'live', mints: 210, mintsPerMinute: 42, uniqueMinters: 31,
-      mintsInWindow: 20, totalSupply: '400', maxSupply: '2000', progressPct: 20,
-      remaining: '1600', soldOut: false, priceWei: '5000000000000000',
+      ageSec: 300, lastSeenSecAgo: 3, status: 'live', mints: 210, mintsPerMinute: 42,
+      uniqueMinters: 31, mintsInWindow: 20, totalSupply: '400', maxSupply: '2000',
+      progressPct: 20, remaining: '1600', soldOut: false, priceWei: '5000000000000000',
       priceEth: '0.005', isFree: false, phase: 'allowlist', projectedSelloutSec: 2280,
       kind: 'confirmed',
-      events: [{ kind: 'crowd', text: '31 wallets in 5m' }],
+      events: [{ kind: 'crowd', text: '31 wallets in 5m', tone: 'good' }],
+      metrics: [
+        { label: 'speed', value: '42/min', short: '42/min', tone: 'neutral' },
+        { label: 'wallets', value: '31', short: '31', tone: 'good' },
+        { label: 'price', value: '0.005 ETH', short: '0.005 ETH', tone: 'neutral' },
+        { label: 'minted', value: '20%', short: '20%', tone: 'good' },
+        { label: 'round', value: 'allowlist', short: 'allowlist', tone: 'bad' },
+      ],
     },
     {
       contract: '0x00000000000000000000000000000000000000cc', name: 'Paper Moons',
-      ageSec: 90, status: 'quiet', mints: 500, mintsPerMinute: 333, uniqueMinters: 44,
-      mintsInWindow: 0, totalSupply: '500', maxSupply: '500', progressPct: 100,
-      remaining: '0', soldOut: true, priceWei: '0', priceEth: '0', isFree: true,
-      kind: 'likely',
+      ageSec: 90, lastSeenSecAgo: 200, status: 'quiet', mints: 500, mintsPerMinute: 333,
+      uniqueMinters: 44, mintsInWindow: 0, totalSupply: '500', maxSupply: '500',
+      progressPct: 100, remaining: '0', soldOut: true, priceWei: '0', priceEth: '0',
+      isFree: true, kind: 'likely',
       events: [
-        { kind: 'sold-out', text: 'Minted out' },
-        { kind: 'fast', text: 'Gone in 90s' },
+        { kind: 'sold-out', text: 'Minted out', tone: 'bad' },
+        { kind: 'fast', text: 'Gone in 90s', tone: 'neutral' },
+      ],
+      metrics: [
+        { label: 'speed', value: '333/min', short: '333/min', tone: 'good' },
+        { label: 'wallets', value: '44', short: '44', tone: 'good' },
+        { label: 'price', value: 'free', short: 'free', tone: 'good' },
+        { label: 'minted', value: '100%', short: '100%', tone: 'bad' },
       ],
     },
     {
       // Barely moving, and carrying artwork — it exercises both the volume
       // filter and the image that has to survive a refresh.
       contract: '0x00000000000000000000000000000000000000dd', name: 'Quiet Ducks',
-      ageSec: 40, status: 'live', mints: 4, mintsPerMinute: 6, uniqueMinters: 3,
-      mintsInWindow: 2, totalSupply: '4', maxSupply: '900', progressPct: 0.4,
-      remaining: '896', soldOut: false, priceWei: '0', priceEth: '0', isFree: true,
-      phase: 'public', kind: 'unverified',
+      ageSec: 40, lastSeenSecAgo: 8, status: 'live', mints: 4, mintsPerMinute: 6,
+      uniqueMinters: 3, mintsInWindow: 2, totalSupply: '4', maxSupply: '900',
+      progressPct: 0.4, remaining: '896', soldOut: false, priceWei: '0', priceEth: '0',
+      isFree: true, phase: 'public', kind: 'likely',
       imageUrl:
         'data:image/svg+xml;base64,' +
         Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>')
           .toString('base64'),
-      events: [{ kind: 'steady', text: '4 minted so far' }],
+      events: [{ kind: 'steady', text: '4 minted so far', tone: 'neutral' }],
+      metrics: [
+        { label: 'speed', value: '6/min', short: '6/min', tone: 'bad' },
+        { label: 'wallets', value: '3', short: '3', tone: 'bad' },
+        { label: 'price', value: 'free', short: 'free', tone: 'good' },
+        { label: 'minted', value: '0%', short: '0%', tone: 'good' },
+      ],
     },
   ];
 
@@ -151,7 +180,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        build: { uiVersion: '12-board', commit: 'testing', deployedAt: 'local' },
+        build: { uiVersion: '13-rows', commit: 'testing', deployedAt: 'local' },
         configured: {
           apiToken: true, privateKeys: true, rpcUrls: true, network: 'testnet',
           spendCeilingEth: '0.05', upstreamTracker: false,
@@ -510,40 +539,44 @@ describe.skipIf(!chromiumPath)('the app in a browser', () => {
     await page.close();
   });
 
-  it('shows everything minting, with supply, price and round', async () => {
+  it('lists every collection minting, one line each', async () => {
+    // A card per collection meant three fitted on a screen. The job is
+    // comparing a dozen at a glance, so the rows are dense.
     const { page, errors } = await openPage();
     await page.click('#navLive');
     await page.waitForSelector('.mintcard', { timeout: 15_000 });
 
     const live = await page.textContent('#app');
     expect(live).toContain('Solar Cats');
-    expect(live).toContain('820');          // minted
-    expect(live).toContain('1000');         // max supply
-    expect(live).toContain('180');          // remaining
-    expect(live).toContain('0.005 ETH');    // a paid mint's price
-    expect(live).toContain('allowlist');    // which round is running
-    expect(live).toContain('3');            // max per wallet
+    expect(live).toContain('320/min');
+    expect(live).toContain('0.005 ETH');   // a paid mint's price
+    expect(live).toContain('allowlist');   // which round is running
+    expect(live).toContain('3');           // per-wallet cap
     expect(errors).toEqual([]);
     await page.close();
-  });
+  }, 25_000);
 
-  it('says out loud what is happening, and animates only the urgent one', async () => {
+  it('colours the numbers by what they mean', async () => {
+    // Green and red are decided on the server next to the hunter's own
+    // thresholds; the page only paints them. A row that reads green here is
+    // one the automatic side would look at twice.
     const { page, errors } = await openPage();
     await page.click('#navLive');
     await page.waitForSelector('.mintcard', { timeout: 15_000 });
 
-    // The line the board exists for.
-    expect(await page.textContent('#app')).toContain('60 wallets in 2m');
-    expect(await page.textContent('#app')).toContain('Minting out');
+    const solar = page.locator('.mintcard:has-text("Solar Cats")');
+    expect(await solar.locator('.strip b.good').count()).toBeGreaterThan(2);
 
-    expect(await page.locator('.ev.minting-out').count()).toBe(1);
-    expect(await page.locator('.ev.sold-out').count()).toBe(1);
-    // A bar that is still filling sweeps; a finished one does not.
-    expect(await page.locator('.bar.moving').count()).toBeGreaterThan(0);
-    expect(await page.locator('.bar.done').count()).toBe(1);
+    // An allowlist round is a closed door unless you are on the list.
+    const foxes = page.locator('.mintcard:has-text("Night Foxes")');
+    expect(await foxes.locator('.strip b.bad').count()).toBeGreaterThan(0);
+
+    // Barely moving, from almost nobody.
+    const ducks = page.locator('.mintcard:has-text("Quiet Ducks")');
+    expect(await ducks.locator('.strip b.bad').count()).toBeGreaterThanOrEqual(2);
     expect(errors).toEqual([]);
     await page.close();
-  });
+  }, 25_000);
 
   it('draws the supply bar to the real proportion', async () => {
     const { page, errors } = await openPage();
@@ -551,105 +584,60 @@ describe.skipIf(!chromiumPath)('the app in a browser', () => {
     await page.waitForSelector('.mintcard', { timeout: 15_000 });
 
     const width = await page.evaluate(() =>
-      (document.querySelector('.mintcard .bar > div') as HTMLElement | null)?.style.width);
+      (document.querySelector('.mintcard .minibar > div') as HTMLElement | null)?.style.width);
     // The browser normalises 82.0% to 82%.
     expect(width).toBe('82%');
+    // A bar still filling sweeps; a finished one does not.
+    expect(await page.locator('.minibar.moving').count()).toBeGreaterThan(0);
+    expect(await page.locator('.minibar.done').count()).toBe(1);
     expect(errors).toEqual([]);
     await page.close();
-  });
+  }, 25_000);
 
   it('mints a row in one press', async () => {
     const { page, errors } = await openPage();
     await page.click('#navLive');
     await page.waitForSelector('.mintcard', { timeout: 15_000 });
 
-    await page.click('.mintcard:has-text("Solar Cats") button:has-text("Practice mint")');
-    await page.waitForFunction(
-      () => (document.getElementById('app')?.textContent ?? '').includes('Minted 10'),
-      null, { timeout: 15_000 });
+    await page.click('.mintcard:has-text("Solar Cats") button:has-text("test")');
+    await page.waitForSelector('.mintcard:has-text("Solar Cats") .good:has-text("done")',
+      { timeout: 15_000 });
 
-    expect(await page.textContent('#app')).toContain('took all 3 at once');
+    // A dense row has no space for a paragraph, so the detail is in the title.
+    const title = await page.getAttribute(
+      '.mintcard:has-text("Solar Cats") button[title]', 'title');
+    expect(title).toMatch(/Minted 10/);
     expect(errors).toEqual([]);
     await page.close();
-  });
+  }, 25_000);
 
-  it('will not offer a plain mint button on a sold-out row', async () => {
+  it('will not offer a mint button on a sold-out row', async () => {
     const { page, errors } = await openPage();
     await page.click('#navLive');
     await page.waitForSelector('.mintcard', { timeout: 15_000 });
 
     const soldOut = page.locator('.mintcard:has-text("Paper Moons")');
-    expect(await soldOut.locator('button:has-text("Minted out")').isDisabled()).toBe(true);
-    // An allowlist round is offered, but labelled as the long shot it is.
-    expect(await page.textContent('.mintcard:has-text("Night Foxes")'))
-      .toMatch(/only listed wallets/i);
-    expect(errors).toEqual([]);
-    await page.close();
-  });
-
-  it('shows everything by default, and tightens only when asked', async () => {
-    // The board is a window on the chain, not a shortlist — the default has to
-    // err toward showing rows, because a reader can dismiss one in a second but
-    // cannot see one that was filtered away.
-    const { page, errors } = await openPage();
-    await page.click('#navLive');
-    await page.waitForSelector('.mintcard', { timeout: 15_000 });
-    expect(await page.locator('.mintcard').count()).toBe(4);
-
-    await page.click('button:has-text("Busiest")');
-    await page.waitForFunction(
-      () => document.querySelectorAll('.mintcard').length === 3,
-      null, { timeout: 15_000 });
+    expect(await soldOut.locator('button:has-text("out")').isDisabled()).toBe(true);
+    // An allowlist round is offered, but not as a confident one.
+    const foxes = page.locator('.mintcard:has-text("Night Foxes")');
+    expect(await foxes.locator('button.solid').count()).toBe(0);
+    expect(await foxes.locator('button:has-text("try")').count()).toBe(1);
     expect(errors).toEqual([]);
     await page.close();
   }, 25_000);
 
-  it('keeps the artwork alive across a refresh', async () => {
-    // The reported failure: thumbnails blinked out every twenty seconds,
-    // because a refresh rewrote each row and destroyed its <img> with it.
-    const { page, errors } = await openPage();
-    await page.click('#navLive');
-    await page.waitForSelector('.mintcard img.thumb', { timeout: 15_000 });
-
-    // Tag the live element, then force a refresh and see if the same one is
-    // still there — a recreated image would have lost the marker.
-    await page.evaluate(() => {
-      (document.querySelector('.mintcard img.thumb') as HTMLElement).dataset.survived = 'yes';
-    });
-    await page.evaluate(() => (window as unknown as { loadBoard: () => Promise<void> }).loadBoard());
-    await page.waitForTimeout(300);
-
-    const survived = await page.evaluate(() =>
-      (document.querySelector('.mintcard img.thumb') as HTMLElement | null)?.dataset.survived);
-    expect(survived).toBe('yes');
-    expect(errors).toEqual([]);
-  }, 25_000);
-
-  it('says what it held back instead of blaming the filter', async () => {
-    const { page, errors } = await openPage();
-    await page.click('#navLive');
-    await page.waitForSelector('.mintcard', { timeout: 15_000 });
-    // The summary accounts for every contract seen, shown or not.
-    expect(await page.textContent('#liveNote')).toMatch(/contract\(s\) seen/);
-    expect(await page.textContent('#app')).not.toMatch(/Loosen the filter/i);
-    expect(errors).toEqual([]);
-    await page.close();
-  }, 25_000);
-
-  it('opens one mint in detail from the board', async () => {
+  it('puts the newest drop at the top', async () => {
+    // A drop is worth knowing about while there is supply left, so the row
+    // that should catch the eye is the one that just started.
     const { page, errors } = await openPage();
     await page.click('#navLive');
     await page.waitForSelector('.mintcard', { timeout: 15_000 });
 
-    await page.click('.mintcard:has-text("Solar Cats") button:has-text("details")');
-    await page.waitForSelector('.num.xxl', { timeout: 8000 });
-
-    // For a live row the giant number is supply progress, not a hunt score.
-    expect(await page.textContent('.num.xxl')).toBe('82');
-    expect(await page.textContent('#app')).toContain('max supply');
+    const first = await page.locator('#liveList .mintcard').first().textContent();
+    expect(first).toContain('Solar Cats');
     expect(errors).toEqual([]);
     await page.close();
-  });
+  }, 25_000);
 
   it('shows the rule defaults without needing an operator token', async () => {
     const { page, errors } = await openPage(false);

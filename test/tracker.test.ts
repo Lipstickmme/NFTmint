@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Address, Hex } from 'viem';
 import { MintTracker, type HotCollection } from '../src/tracker.js';
-import { classifyMint, parseExtraSelectors, MINT_SELECTORS } from '../src/mintdetect.js';
+import {
+  classifyMint,
+  mintTarget,
+  parseExtraSelectors,
+  MINT_SELECTORS,
+} from '../src/mintdetect.js';
 import { selectorOf } from '../src/calldata.js';
 import type { FeedTx } from '../src/feed.js';
 
@@ -121,6 +126,71 @@ describe('parseExtraSelectors', () => {
 
   it('rejects garbage rather than silently ignoring it', () => {
     expect(() => parseExtraSelectors('nonsense')).toThrow(/neither a 4-byte selector/);
+  });
+});
+
+describe('mints made through a shared drop contract', () => {
+  // OpenSea's SeaDrop. Buyers call it, and it mints on the collection's behalf,
+  // so on the feed it looks like one impossibly busy address with no NFT
+  // interface — which is exactly what a live board showed at 3272 mints a
+  // minute before this existed.
+  const SEADROP = '0x00005EA00Ac477B1030CE78506496e8C2dE24bf5' as Address;
+  const COLLECTION = '0x00000000000000000000000000000000000000cc';
+  const MINT_PUBLIC = selectorOf('mintPublic(address,address,address,uint256)');
+
+  /** mintPublic(nftContract, feeRecipient, minterIfNotPayer, quantity) */
+  function seaDropCalldata(nft: string, minter = '0x' + '0'.repeat(40)): Hex {
+    const word = (hex: string): string => hex.replace(/^0x/, '').padStart(64, '0');
+    return (MINT_PUBLIC + word(nft) + word('0x' + '1'.repeat(40)) + word(minter) +
+      word('0x1')) as Hex;
+  }
+
+  it('credits the mint to the collection, not the drop contract', () => {
+    const target = mintTarget({
+      to: SEADROP, selector: MINT_PUBLIC, data: seaDropCalldata(COLLECTION),
+    });
+    expect(target?.toLowerCase()).toBe(COLLECTION.toLowerCase());
+  });
+
+  it('leaves an ordinary mint pointed at its own contract', () => {
+    expect(mintTarget({ to: CONTRACT_A, selector: MINT_SEL, data: tx().data })).toBe(CONTRACT_A);
+  });
+
+  it('refuses to guess when the calldata is too short to hold a target', () => {
+    expect(mintTarget({ to: SEADROP, selector: MINT_PUBLIC, data: MINT_PUBLIC })).toBeUndefined();
+  });
+
+  it('refuses a zero address rather than tracking nothing', () => {
+    const data = seaDropCalldata('0x' + '0'.repeat(40));
+    expect(mintTarget({ to: SEADROP, selector: MINT_PUBLIC, data })).toBeUndefined();
+  });
+
+  it('tracks the collection and remembers where to send the mint', () => {
+    // The row is named after the collection, but the calldata belongs to the
+    // proxy — replaying it at the collection would revert every time.
+    const tracker = new MintTracker({ trackUniqueMinters: false, minAttempts: 1000 });
+    for (let i = 0; i < 6; i++) {
+      tracker.ingest(tx({
+        to: SEADROP, selector: MINT_PUBLIC, data: seaDropCalldata(COLLECTION),
+      }));
+    }
+
+    expect(tracker.get(SEADROP)).toBeUndefined();
+    const stats = tracker.get(COLLECTION.toLowerCase() as Address);
+    expect(stats?.attempts).toBe(6);
+
+    const row = tracker.snapshot().find((r) => r.contract === COLLECTION.toLowerCase());
+    expect(row?.mintVia?.toLowerCase()).toBe(SEADROP.toLowerCase());
+  });
+
+  it('keeps marketplace fills out of the tracker entirely', () => {
+    // Seaport order fulfilment is a purchase, not a mint.
+    const fill = selectorOf(
+      'fulfillBasicOrder((address,uint256,uint256,address,address,address,uint256,uint256,' +
+      'uint8,uint256,uint256,bytes32,uint256,bytes32,bytes32,uint256,(uint256,address)[],bytes))',
+    );
+    expect(classifyMint({ to: CONTRACT_A, selector: fill, value: 0n, data: '0x' }).isMint)
+      .toBe(false);
   });
 });
 

@@ -468,22 +468,37 @@ Only the urgent line animates and only a bar that is still filling sweeps —
 if everything moved, nothing would read as urgent. All of it respects
 `prefers-reduced-motion`.
 
-**The bias is toward showing things.** This is a window on the chain, not a
-shortlist — a person can dismiss a row in a second but cannot see one that was
-filtered away. So the volume floor defaults to almost nothing, contracts that
-cannot be identified are shown and labelled `unverified` rather than dropped,
-and sold-out collections stay because "it went in ninety seconds" is information
-after the fact.
+**One line per collection, newest first.** A card each meant three fitted on a
+screen, which defeats the point — the job is comparing a dozen at a glance. Each
+row carries every metric with its verdict in colour, and the newest drop is at
+the top, because a drop is worth knowing about while there is supply left. Ten
+at a time, with the rest a click away and everything seen this session kept in a
+collapsible below.
 
-Exactly one thing is removed outright: a contract that answers, directly, that
-it is not an NFT. Swap routers and fungible tokens land there, and that is not a
-judgement call.
+**Verified collections only.** A row has to show positive evidence of being an
+NFT — an ERC-165 answer, a token URI, or a name and a supply. Being permissive
+here put OpenSea's **SeaDrop** on the board at 3272 mints a minute with no NFT
+interface anywhere in sight.
+
+That turned out to be worth fixing rather than filtering. SeaDrop is a *shared*
+drop contract: buyers call it, and it mints on the collection's behalf, passing
+the collection as its first argument. So the traffic is real and only
+misattributed — those mints are now credited to the collection they were
+actually for, which makes every drop minting through OpenSea visible instead of
+piling up under one unrecognisable address. Marketplace fills (Seaport) are
+dropped outright, because a purchase is not a mint.
 
 When rows *are* held back, the board says how many and why — "38 contracts seen,
 4 shown. Held back: 31 under the mint floor, 3 not NFT contracts." An earlier
 version reported *7301 mints seen* above an empty list and suggested loosening
 the filter, which was wrong twice over: it did not say what had been dropped,
 and it blamed the reader's settings for something else entirely.
+
+**Green and red are decided on the server**, next to the thresholds the hunter's
+own criteria use — so a row that reads green is one the automatic side would
+look at twice. Speed, distinct wallets, price, supply gone, per-wallet cap,
+sellout runway, which round is open, and how long since the last mint each get a
+verdict. The page only paints them.
 
 **Mint any row in one press.** The board already found, for every collection it
 shows, a transaction that mints it successfully — pressing Mint replays it
@@ -702,7 +717,7 @@ src/
 api/[...path].ts One serverless function; dispatches to src/routes/
 src/routes/      The route handlers themselves
 public/index.html  The web UI
-test/            548 tests, incl. end-to-end runs against a mock node
+test/            560 tests, incl. end-to-end runs against a mock node
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
 ```

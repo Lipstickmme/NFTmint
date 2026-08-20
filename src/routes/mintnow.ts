@@ -93,10 +93,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
           );
         }
 
+        // Mints through a shared drop contract have to go back to that
+        // contract; the collection would reject its own calldata.
+        const sendTo = cached.mintVia ?? contract;
+
         // A synthetic row: the mint path only reads these fields, and the
         // cached sample is exactly what a hunt round would have handed it.
         const collection = {
-          contract,
+          contract: sendTo,
           topSelector: cached.entrypoint as Hex | undefined,
           sampleCalldata: cached.sampleCalldata as Hex,
           sampleRaw: cached.sampleRaw as Hex | undefined,

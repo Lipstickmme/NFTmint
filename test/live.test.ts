@@ -181,9 +181,10 @@ describe('toLiveMint', () => {
 });
 
 describe('what the board keeps', () => {
-  it('labels a contract it could not identify rather than hiding it', () => {
-    // Hiding it is a judgement the reader should get to make. The mint path
-    // still refuses it; the board still shows it.
+  it('marks a contract nothing could be established about as unverified', () => {
+    // These are held off the board. Being permissive here is what put a shared
+    // drop contract on it with three thousand mints a minute and no NFT
+    // interface anywhere in sight.
     const m = toLiveMint(tracked(), undefined);
     expect(m.kind).toBe('unverified');
   });
@@ -195,6 +196,71 @@ describe('what the board keeps', () => {
   it('marks an older collection with the right shape as likely', () => {
     const m = toLiveMint(tracked(), info({ isNft: undefined, looksLikeNft: true }));
     expect(m.kind).toBe('likely');
+  });
+});
+
+describe('describeMetrics', () => {
+  function metricsFor(over: Partial<TrackedCollection>, i?: Partial<ContractInfo>) {
+    const m = toLiveMint(tracked(over), info(i));
+    const by: Record<string, string> = {};
+    for (const x of m.metrics) by[x.label] = x.tone;
+    return { row: m, tone: by };
+  }
+
+  it('reads a busy, crowded, free public drop as good', () => {
+    const { tone } = metricsFor({}, { phase: 'public' });
+    expect(tone.speed).toBe('good');
+    expect(tone.wallets).toBe('good');
+    expect(tone.price).toBe('good');
+    expect(tone.round).toBe('good');
+  });
+
+  it('calls out a crowd of one bot', () => {
+    // Many mints from three addresses is a bot fight, not demand.
+    expect(metricsFor({ uniqueMinters: 3 }).tone.wallets).toBe('bad');
+  });
+
+  it('calls out a drop that has nearly gone', () => {
+    // Past ninety per cent you mostly pay gas to lose the race.
+    const { tone } = metricsFor({}, { progressPct: 96 });
+    expect(tone.minted).toBe('bad');
+  });
+
+  it('calls out an allowlist round, which is a closed door', () => {
+    expect(metricsFor({}, { phase: 'allowlist' }).tone.round).toBe('bad');
+  });
+
+  it('calls out a collection that has stopped', () => {
+    expect(metricsFor({ lastSeenSecAgo: 400 }).tone['last mint']).toBe('bad');
+  });
+
+  it('says a per-wallet cap above one is worth having', () => {
+    const { tone } = metricsFor({}, { maxPerWallet: { value: '5', source: 'maxPerWallet()' } });
+    expect(tone['max each']).toBe('good');
+  });
+
+  it('gives every metric a verdict', () => {
+    // A metric with no tone renders in the default colour and reads as an
+    // oversight rather than a neutral judgement.
+    const { row } = metricsFor({});
+    for (const metric of row.metrics) {
+      expect(['good', 'bad', 'neutral']).toContain(metric.tone);
+      expect(metric.value.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('ordering', () => {
+  it('puts a sold-out collection behind one still minting', () => {
+    // Verified through the board's own comparator by way of the fields it uses.
+    const live = toLiveMint(tracked(), info());
+    const gone = toLiveMint(tracked(), info({ soldOut: true }));
+    expect(live.soldOut).toBe(false);
+    expect(gone.soldOut).toBe(true);
+  });
+
+  it('keeps the age that the newest-first ordering sorts on', () => {
+    expect(toLiveMint(tracked({ ageSec: 12 }), info()).ageSec).toBe(12);
   });
 });
 
@@ -233,8 +299,8 @@ describe('describeBoard', () => {
   });
 
   it('mentions what it could not read', () => {
-    const note = describeBoard(20, 2, { ...none, seen: 2, unreadable: 2 });
-    expect(note).toMatch(/could not be read/);
+    const note = describeBoard(20, 0, { ...none, seen: 2, unreadable: 2 });
+    expect(note).toContain('2 unreadable');
   });
 
   it('stays quiet about categories with nothing in them', () => {

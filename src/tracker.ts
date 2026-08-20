@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { recoverTransactionAddress, type Address, type Hex } from 'viem';
-import { classifyMint } from './mintdetect.js';
+import { classifyMint, mintTarget, PROXY_MINT_SELECTORS } from './mintdetect.js';
 import { log } from './logger.js';
 import type { FeedTx } from './feed.js';
 
@@ -109,6 +109,13 @@ export interface ContractStats {
   promoted: boolean;
   /** True when the entrypoint is one we recognise outright. */
   knownSelector: boolean;
+  /**
+   * The address mints were actually sent to, when that is not the collection.
+   *
+   * Kept because replaying the calldata means sending it back to the drop
+   * contract, not to the collection the row is named after.
+   */
+  mintVia?: Address;
 }
 
 export interface HotCollection {
@@ -181,6 +188,8 @@ export interface TrackedCollection {
   sampleCalldata?: Hex;
   /** The signed transaction that calldata came from, for ABI-free replay. */
   sampleRaw?: Hex;
+  /** The drop contract mints go through, when they do not go direct. */
+  mintVia?: Address;
   /**
    * Whether the entrypoint was recognised outright, or learned from the fact
    * that a lot of distinct wallets were calling it. Surfaced so the UI can be
@@ -220,8 +229,18 @@ export class MintTracker extends EventEmitter {
     );
     if (!classification.isMint || !tx.to) return;
 
+    // A mint made through a shared drop contract belongs to the collection it
+    // was for, not to the drop contract. Without this, OpenSea's SeaDrop shows
+    // up as one impossibly busy address with no NFT interface, and every
+    // collection minting through it is invisible.
+    const target = mintTarget({ to: tx.to, selector: tx.selector, data: tx.data });
+    if (!target) return;
+
     this.totalMints += 1;
-    const contract = tx.to.toLowerCase() as Address;
+    const viaProxy =
+      tx.selector !== undefined &&
+      PROXY_MINT_SELECTORS.has(tx.selector.toLowerCase() as Hex);
+    const contract = target.toLowerCase() as Address;
 
     let stats = this.contracts.get(contract);
     if (!stats) {
@@ -244,6 +263,7 @@ export class MintTracker extends EventEmitter {
         // else has to be called `promoteAfter` times before it costs anything.
         promoted: classification.confidence === 'known',
         knownSelector: classification.confidence === 'known',
+        mintVia: viaProxy ? (tx.to.toLowerCase() as Address) : undefined,
       };
       this.contracts.set(contract, stats);
       this.emit('discovered', contract, now);
@@ -256,6 +276,7 @@ export class MintTracker extends EventEmitter {
     if (classification.isFree) stats.freeAttempts += 1;
     else stats.paidAttempts += 1;
     if (classification.confidence === 'known') stats.knownSelector = true;
+    if (viaProxy) stats.mintVia = tx.to.toLowerCase() as Address;
 
     if (tx.selector) {
       stats.selectors.set(tx.selector, (stats.selectors.get(tx.selector) ?? 0) + 1);
@@ -458,6 +479,7 @@ export class MintTracker extends EventEmitter {
         topSelector,
         sampleCalldata: topSelector ? stats.sampleCalldata.get(topSelector) : undefined,
         sampleRaw: topSelector ? stats.sampleRaw.get(topSelector) : undefined,
+        mintVia: stats.mintVia,
         entrypoint: stats.knownSelector ? 'known' : 'observed',
         flagged: stats.flagged,
       });

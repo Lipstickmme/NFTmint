@@ -99,11 +99,71 @@ const NOT_MINT_SIGNATURES = [
   'execute(bytes,bytes[])',
   'unwrapWETH9(uint256,address)',
   'wrapETH(uint256)',
+  // Seaport order fulfilment — a purchase on a marketplace, not a mint.
+  'fulfillBasicOrder((address,uint256,uint256,address,address,address,uint256,uint256,uint8,uint256,uint256,bytes32,uint256,bytes32,bytes32,uint256,(uint256,address)[],bytes))',
+  'fulfillOrder(((address,address,(uint8,address,uint256,uint256,uint256)[],(uint8,address,uint256,uint256,uint256,address)[],uint8,uint256,uint256,bytes32,uint256,bytes32,uint256),bytes),bytes32)',
 ] as const;
 
 export const NOT_MINT_SELECTORS: ReadonlySet<Hex> = new Set(
   NOT_MINT_SIGNATURES.map((sig) => selectorOf(sig).toLowerCase() as Hex),
 );
+
+/**
+ * Mints made through a shared drop contract.
+ *
+ * OpenSea's SeaDrop is the common one: buyers call SeaDrop, not the collection,
+ * and SeaDrop mints on the collection's behalf. On the feed that looks like one
+ * enormously busy contract at `0x00005EA0…` with thousands of mints a minute and
+ * no NFT interface — which is exactly what it is, and exactly what should not be
+ * on a board of collections.
+ *
+ * The traffic is real, though. It is only attributed to the wrong address, and
+ * the right one is the first argument of every one of these calls:
+ *
+ *   mintPublic(address nftContract, address feeRecipient, …)
+ *
+ * So rather than discarding it, the mint is credited to the collection it was
+ * actually for. Keyed by selector rather than by proxy address on purpose:
+ * SeaDrop has several deployments and more will follow, but the argument order
+ * is part of its interface.
+ */
+const PROXY_MINT_SIGNATURES = [
+  // SeaDrop v1 — the collection is always the first parameter.
+  'mintPublic(address,address,address,uint256)',
+  'mintAllowList(address,address,address,uint256,(bytes32,address,uint256,uint256,uint256,uint256,uint256,uint256,bool),bytes32[])',
+  'mintSigned(address,address,address,uint256,(bytes32,address,uint256,uint256,uint256,uint256,uint256,uint256,bool),uint256,bytes)',
+  'mintAllowedTokenHolder(address,address,address,(address,uint256[])[])',
+] as const;
+
+export const PROXY_MINT_SELECTORS: ReadonlySet<Hex> = new Set(
+  PROXY_MINT_SIGNATURES.map((sig) => selectorOf(sig).toLowerCase() as Hex),
+);
+
+/**
+ * The collection a mint is actually for.
+ *
+ * Normally the transaction's `to`. For a call through a shared drop contract it
+ * is the first address argument instead. Returns undefined when the calldata is
+ * too short to hold one, rather than guessing.
+ */
+export function mintTarget(tx: {
+  to?: string;
+  selector?: Hex;
+  data: Hex;
+}): string | undefined {
+  if (!tx.to) return undefined;
+  const selector = tx.selector?.toLowerCase() as Hex | undefined;
+  if (!selector || !PROXY_MINT_SELECTORS.has(selector)) return tx.to;
+
+  // Selector plus one 32-byte word: `0x` + 8 + 64 characters.
+  if (tx.data.length < 74) return undefined;
+  const word = tx.data.slice(10, 74);
+  // A left-padded address is twelve zero bytes then twenty address bytes.
+  if (!/^0{24}[0-9a-fA-F]{40}$/.test(word)) return undefined;
+  const address = `0x${word.slice(24)}`;
+  // A zero address means the argument was not filled in; that is not a target.
+  return /^0x0{40}$/.test(address) ? undefined : address;
+}
 
 export interface MintClassification {
   isMint: boolean;

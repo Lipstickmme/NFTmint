@@ -39,6 +39,31 @@ export interface LiveEvent {
   kind: 'minting-out' | 'sold-out' | 'fast' | 'crowd' | 'fresh' | 'steady';
   /** The same thing in words: "60 wallets in 2 minutes". */
   text: string;
+  /** Whether this is a reason to act or a reason not to. */
+  tone: Tone;
+}
+
+/**
+ * Whether a number is encouraging, discouraging, or neither.
+ *
+ * Decided here rather than in the page so the judgement is in one place and can
+ * be tested. A colour on a screen is an opinion, and opinions belong somewhere
+ * they can be argued with.
+ */
+export type Tone = 'good' | 'bad' | 'neutral';
+
+export interface LiveMetric {
+  label: string;
+  value: string;
+  /**
+   * The same number with the label folded in: `60w`, `×3`, `82%`.
+   *
+   * A one-line row on a phone has room for the figures or the words, not both,
+   * and truncating mid-strip hides exactly the metrics at the end. These are
+   * chosen to be self-describing without their label.
+   */
+  short: string;
+  tone: Tone;
 }
 
 export interface LiveMint {
@@ -87,11 +112,17 @@ export interface LiveMint {
   projectedSelloutSec?: number;
   /** Headline events, most interesting first. */
   events: LiveEvent[];
+  /** The row's numbers, each with a verdict, ready to render. */
+  metrics: LiveMetric[];
+  /** Seconds since the last mint was seen. Drives "is this still moving". */
+  lastSeenSecAgo: number;
 
   /** Enough to mint it from the board without another feed sample. */
   entrypoint?: Hex;
   sampleCalldata?: Hex;
   sampleRaw?: Hex;
+  /** The shared drop contract mints go through, when they do not go direct. */
+  mintVia?: string;
 }
 
 export interface LiveBoard {
@@ -169,10 +200,10 @@ export function describeEvents(m: {
   const events: LiveEvent[] = [];
 
   if (m.soldOut) {
-    events.push({ kind: 'sold-out', text: 'Minted out' });
-    // Nothing else matters once it is gone, except how fast it went.
+    // Too late is the plainest bad news there is.
+    events.push({ kind: 'sold-out', text: 'Minted out', tone: 'bad' });
     if (m.ageSec > 0 && m.ageSec < 3600) {
-      events.push({ kind: 'fast', text: `Gone in ${formatDuration(m.ageSec)}` });
+      events.push({ kind: 'fast', text: `Gone in ${formatDuration(m.ageSec)}`, tone: 'neutral' });
     }
     return events;
   }
@@ -181,6 +212,7 @@ export function describeEvents(m: {
     events.push({
       kind: 'minting-out',
       text: `Minting out — about ${formatDuration(m.projectedSelloutSec)} left`,
+      tone: 'good',
     });
   }
 
@@ -189,21 +221,124 @@ export function describeEvents(m: {
     events.push({
       kind: 'crowd',
       text: `${m.uniqueMinters} wallets in ${formatDuration(m.ageSec)}`,
+      tone: 'good',
     });
   }
 
   if (m.mintsPerMinute >= 120) {
-    events.push({ kind: 'fast', text: `${Math.round(m.mintsPerMinute)} a minute` });
+    events.push({
+      kind: 'fast', text: `${Math.round(m.mintsPerMinute)} a minute`, tone: 'good',
+    });
   }
 
   if (m.ageSec <= 120 && m.mints >= 10) {
-    events.push({ kind: 'fresh', text: `Just started — ${formatDuration(m.ageSec)} ago` });
+    events.push({
+      kind: 'fresh', text: `Just started — ${formatDuration(m.ageSec)} ago`, tone: 'good',
+    });
   }
 
   if (events.length === 0) {
-    events.push({ kind: 'steady', text: `${m.mints} minted so far` });
+    events.push({ kind: 'steady', text: `${m.mints} minted so far`, tone: 'neutral' });
   }
   return events;
+}
+
+/**
+ * The row's numbers, each with a verdict.
+ *
+ * The thresholds are the same ones the hunter's criteria use, so a row that
+ * reads green here is a row the automatic side would look at twice. Deliberately
+ * coarse: a colour is a glance, not a measurement.
+ */
+export function describeMetrics(m: LiveMint): LiveMetric[] {
+  const price = m.isFree ? 'free' : `${trimEth(m.priceEth)} ETH`;
+
+  const metrics: LiveMetric[] = [
+    {
+      label: 'speed',
+      value: `${m.mintsPerMinute}/min`,
+      short: `${compact(m.mintsPerMinute)}/min`,
+      tone: m.mintsPerMinute >= 60 ? 'good' : m.mintsPerMinute < 10 ? 'bad' : 'neutral',
+    },
+    {
+      label: 'wallets',
+      // Few wallets behind many mints is one bot, not demand.
+      value: String(m.uniqueMinters),
+      short: `${compact(m.uniqueMinters)}w`,
+      tone: m.uniqueMinters >= 25 ? 'good' : m.uniqueMinters < 5 ? 'bad' : 'neutral',
+    },
+    {
+      label: 'price',
+      value: price,
+      short: m.isFree ? 'free' : `${trimEth(m.priceEth)}Ξ`,
+      tone: m.isFree ? 'good' : 'neutral',
+    },
+  ];
+
+  if (m.progressPct !== undefined) {
+    metrics.push({
+      label: 'minted',
+      value: `${m.progressPct.toFixed(0)}% minted`,
+      short: `${m.progressPct.toFixed(0)}%`,
+      // Past ninety per cent you are racing for what is left and will mostly
+      // pay gas to lose.
+      tone: m.soldOut || m.progressPct >= 90 ? 'bad' : m.progressPct < 70 ? 'good' : 'neutral',
+    });
+  }
+
+  if (m.maxPerWallet) {
+    metrics.push({
+      label: 'max each',
+      value: `${m.maxPerWallet} each`,
+      short: `×${m.maxPerWallet}`,
+      tone: Number(m.maxPerWallet) > 1 ? 'good' : 'neutral',
+    });
+  }
+
+  if (m.projectedSelloutSec !== undefined && !m.soldOut) {
+    const left = formatDuration(m.projectedSelloutSec);
+    metrics.push({
+      label: 'gone in',
+      value: `gone in ${left}`,
+      // Words rather than a symbol: a glyph that does not exist in the reader's
+      // font renders as a stray letter, and "34s" alone is indistinguishable
+      // from the idle time two metrics along.
+      short: `~${left} left`,
+      tone: m.projectedSelloutSec <= 900 ? 'good' : 'neutral',
+    });
+  }
+
+  if (m.phase) {
+    metrics.push({
+      label: 'round',
+      value: `${m.phase} round`,
+      short: m.phase === 'allowlist' ? 'allowlist' : m.phase,
+      // An allowlist round is a closed door unless you are on the list.
+      tone: m.phase === 'public' ? 'good' : 'bad',
+    });
+  }
+
+  const idle = Math.round(m.lastSeenSecAgo);
+  metrics.push({
+    label: 'last mint',
+    value: idle <= 1 ? 'minting now' : `last mint ${idle}s ago`,
+    short: idle <= 1 ? 'minting now' : `${idle}s idle`,
+    tone: m.lastSeenSecAgo <= 15 ? 'good' : m.lastSeenSecAgo > 90 ? 'bad' : 'neutral',
+  });
+
+  return metrics;
+}
+
+/** 1200 → 1.2k, so a busy number does not push the row wider than the screen. */
+function compact(n: number): string {
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+/** 0.005000000000000000 → 0.005. */
+function trimEth(eth: string): string {
+  return eth.includes('.') ? eth.replace(/0+$/, '').replace(/\.$/, '') : eth;
 }
 
 /**
@@ -226,11 +361,9 @@ export function describeBoard(
   const held: string[] = [];
   if (excluded.belowFloor > 0) held.push(`${excluded.belowFloor} under the mint floor`);
   if (excluded.notNft > 0) held.push(`${excluded.notNft} not NFT contracts`);
+  if (excluded.unreadable > 0) held.push(`${excluded.unreadable} unreadable`);
   if (excluded.notInspected > 0) held.push(`${excluded.notInspected} past the read budget`);
   if (held.length > 0) parts.push(`Held back: ${held.join(', ')}.`);
-  if (excluded.unreadable > 0) {
-    parts.push(`${excluded.unreadable} could not be read and are shown unverified.`);
-  }
   return parts.join(' ');
 }
 
@@ -254,12 +387,13 @@ export function toLiveMint(c: TrackedCollection, info?: ContractInfo): LiveMint 
     status: c.status,
   };
 
-  return {
+  const row: LiveMint = {
     contract: c.contract,
     name: info?.name,
     symbol: info?.symbol,
     imageUrl: info?.preview?.imageUrl,
     ageSec: c.ageSec,
+    lastSeenSecAgo: c.lastSeenSecAgo,
     status: c.status,
     mints: c.attempts,
     mintsPerMinute: c.attemptsPerMinute,
@@ -279,10 +413,16 @@ export function toLiveMint(c: TrackedCollection, info?: ContractInfo): LiveMint 
       info?.isNft === true ? 'confirmed' : info?.looksLikeNft ? 'likely' : 'unverified',
     projectedSelloutSec,
     events: describeEvents(base),
+    metrics: [],
     entrypoint: c.topSelector,
     sampleCalldata: c.sampleCalldata,
     sampleRaw: c.sampleRaw,
+    mintVia: c.mintVia,
   };
+
+  // Needs the finished row, so it is filled in rather than passed in.
+  row.metrics = describeMetrics(row);
+  return row;
 }
 
 /**
@@ -371,32 +511,42 @@ export async function runLiveBoard(
 
     for (let i = 0; i < shortlist.length; i += 1) {
       const info = inspected[i];
+      const row = toLiveMint(shortlist[i], info);
 
-      // The only thing removed outright: a contract that says, directly, that
-      // it is not a collection. Swap routers and tokens land here, and that is
-      // not a judgement call.
-      if (info?.isNft === false) {
-        excluded.notNft += 1;
+      // A board of collections has to be collections. Anything that cannot show
+      // positive evidence of being one — an ERC-165 answer, or a token URI, or a
+      // name and a supply — is counted and left off.
+      //
+      // Being permissive here is what put a shared drop contract on the board
+      // with three thousand mints a minute and no NFT interface. Attributing
+      // those mints to the collection they were for is the fix; showing the
+      // proxy itself never was.
+      if (row.kind === 'unverified') {
+        if (info) excluded.notNft += 1;
+        else excluded.unreadable += 1;
         continue;
       }
 
-      // A failed read is not evidence of anything. It gets a row marked
-      // 'unverified' rather than disappearing, and is counted so the board can
-      // say how much it could not see.
-      if (!info) excluded.unreadable += 1;
-
-      mints.push(toLiveMint(shortlist[i], info));
+      mints.push(row);
     }
   } finally {
     for (const c of clients) c.destroy();
   }
 
-  // Still minting first, then by how close to gone.
+  // Newest at the top.
+  //
+  // A drop is worth knowing about while there is still supply left, so the
+  // thing that should catch the eye is the one that just started — not the one
+  // that has been grinding for an hour. Anything finished sinks, and anything
+  // that has gone quiet sinks behind what is still moving, so the top of the
+  // list is always somewhere worth looking.
   mints.sort((a, b) => {
     if (a.soldOut !== b.soldOut) return a.soldOut ? 1 : -1;
-    const aOut = a.projectedSelloutSec ?? Number.MAX_SAFE_INTEGER;
-    const bOut = b.projectedSelloutSec ?? Number.MAX_SAFE_INTEGER;
-    if (aOut !== bOut) return aOut - bOut;
+    const aLive = a.status === 'live' ? 0 : 1;
+    const bLive = b.status === 'live' ? 0 : 1;
+    if (aLive !== bLive) return aLive - bLive;
+    // Youngest drop first; ties broken by whichever is minting harder.
+    if (a.ageSec !== b.ageSec) return a.ageSec - b.ageSec;
     return b.mintsPerMinute - a.mintsPerMinute;
   });
 

@@ -22,6 +22,13 @@ const TTL_SEC = 15 * 60;
 export interface CachedMint {
   contract: string;
   name?: string;
+  /**
+   * The shared drop contract to send to, when mints do not go direct.
+   *
+   * The row is named after the collection, but the calldata belongs to the
+   * proxy — replaying it at the collection would revert every time.
+   */
+  mintVia?: string;
   entrypoint?: string;
   sampleCalldata?: string;
   sampleRaw?: string;
@@ -53,6 +60,7 @@ export async function rememberLiveMints(
             JSON.stringify({
               contract: m.contract,
               name: m.name,
+              mintVia: m.mintVia,
               entrypoint: m.entrypoint,
               sampleCalldata: m.sampleCalldata,
               sampleRaw: m.sampleRaw,

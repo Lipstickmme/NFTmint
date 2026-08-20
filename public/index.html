@@ -153,11 +153,41 @@
     .bar>div{transition:none}
   }
 
-  .mintcard{background:var(--sunk);border-radius:var(--rs);padding:16px;margin-bottom:9px}
-  .mintcard.out{opacity:.55}
-  .mintcard .head{display:flex;align-items:center;gap:12px}
-  .mintcard .meta{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px}
-  .mintcard .meta div{min-width:60px}
+  /* ── one-line rows ────────────────────────────────────────────────────
+     A card per collection meant only three fitted on a screen. These are
+     dense enough to compare a dozen at a glance, which is the actual job. */
+  .mintcard{background:var(--sunk);border-radius:var(--rxs);padding:9px 11px;margin-bottom:5px;
+    display:flex;align-items:center;gap:10px;cursor:pointer}
+  .mintcard:hover{background:var(--line)}
+  .mintcard.out{opacity:.5}
+  .mintcard .thumb{width:30px;height:30px;border-radius:8px}
+  .mintcard .grow{flex:1;min-width:0}
+  .mintcard .name{font-size:13.5px;font-weight:600;letter-spacing:-.02em;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* The metric strip: label in grey, value coloured by its verdict. */
+  /* Wraps rather than truncating: cutting the strip off hides exactly the
+     metrics at the end, which are the ones about supply and timing. */
+  .strip{font-size:11px;font-weight:500;letter-spacing:-.005em;color:var(--mute);
+    margin-top:2px;line-height:1.35;display:flex;flex-wrap:wrap;gap:0 7px}
+  .strip b{font-weight:650}
+  .strip .sep{display:none}
+  .good{color:var(--ok)} .bad{color:var(--err)} .neutral{color:var(--ink)}
+
+  .mintcard .pct{flex:none;text-align:right;width:46px}
+  .mintcard .pct .num{font-size:17px}
+  .minibar{height:3px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:3px}
+  .minibar>div{height:100%;border-radius:99px;background:var(--inv)}
+  .minibar.moving>div{background:linear-gradient(90deg,var(--inv),var(--mute),var(--inv));
+    background-size:220% 100%;animation:sweep 1.6s linear infinite}
+  .minibar.done>div{background:var(--mute)}
+  .mintcard .go{flex:none;padding:7px 13px;font-size:11.5px;border-radius:99px}
+
+  /* A row that just appeared at the top should announce itself. */
+  .mintcard.fresh{animation:dropin .5s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes dropin{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){
+    .mintcard.fresh,.minibar.moving>div{animation:none}
+  }
 
   .chk{display:grid;grid-template-columns:14px 1fr;gap:9px;padding:8px 0;font-size:12.5px;
     border-bottom:1px solid var(--line)}
@@ -224,7 +254,7 @@
 
 <script>
 'use strict';
-var PAGE_VERSION = '12-board';
+var PAGE_VERSION = '13-rows';
 
 /* ── state ──────────────────────────────────────────────────────────────── */
 var view='mints', tab='passed', hunting=false, rounds=0, selected=null;
@@ -741,7 +771,15 @@ function stat(k,v){
  * hunter answers "should I buy this" and mostly says no, which is right for
  * spending money unattended and useless as a view of the chain. This answers
  * "what is happening", shows the numbers, and lets you decide.
+ *
+ * Rows are one line each. A card per collection meant three fitted on a screen,
+ * which defeats the point — the job is comparing a dozen at a glance.
  */
+var LIVE_PAGE=10;
+var livePage=1;
+/** Everything seen this session, so a drop that scrolls out is not lost. */
+var liveHistory={};
+
 function startBoard(){
   if(boardTimer) return;
   loadBoard();
@@ -756,7 +794,11 @@ async function loadBoard(){
   if(board===null){ board='loading'; render(); }
   try{
     board=await api('/api/live?seconds=20&minMints='+encodeURIComponent(minMints()));
-    for(var i=0;i<board.mints.length;i++) noteArt(board.mints[i].imageUrl);
+    for(var i=0;i<board.mints.length;i++){
+      noteArt(board.mints[i].imageUrl);
+      // Keep a copy so it can still be found after it stops minting.
+      liveHistory[board.mints[i].contract]={row:board.mints[i],at:Date.now()};
+    }
   }catch(e){ board={error:e.message,mints:[]}; }
 
   // Refreshing an existing board updates the summary line and the rows in
@@ -779,7 +821,8 @@ async function loadBoard(){
  * reading it — so the default has to err toward showing a row, not hiding one.
  */
 function minMints(){ return localStorage.getItem('fm_minmints')||'2'; }
-function setMinMints(v){ localStorage.setItem('fm_minmints',String(v)); loadBoard(); }
+function setMinMints(v){ localStorage.setItem('fm_minmints',String(v)); livePage=1; loadBoard(); }
+function showMore(){ livePage++; paintLive(); }
 
 function renderLive(){
   var out=['<div class="card">'];
@@ -802,8 +845,6 @@ function renderLive(){
 
   out.push('<p class="lede" id="liveNote">'+esc(board.note)+'</p>');
 
-  /* Deliberately loose. The default shows nearly everything; the tighter
-     settings are there for when the chain is busy, not the other way round. */
   var cur=String(minMints());
   var opts=[['2','Everything'],['10','Busier'],['40','Busiest']];
   var seg='';
@@ -816,9 +857,14 @@ function renderLive(){
     '</div>');
   out.push('</div>');
 
-  // The list lives in its own container and is updated in place, so the
-  // artwork is not thrown away and refetched every twenty seconds.
-  out.push('<div class="card flat" id="liveWrap"><div id="liveList"></div></div>');
+  // Newest first, so the top of the list is always where to look.
+  out.push('<div class="card flat" id="liveWrap">'+
+    '<div class="k">Newest first</div>'+
+    '<div id="liveList" style="margin-top:10px"></div>'+
+    '<div id="liveMore"></div></div>');
+
+  out.push('<details class="card flat" id="liveHist"><summary>Earlier this session</summary>'+
+    '<div id="histList" style="margin-top:14px"></div></details>');
   return out.join('');
 }
 
@@ -834,34 +880,86 @@ function paintLive(){
   var list=$('liveList');
   if(!list||!board||board==='loading'||board.error) return;
 
-  var mints=(board.mints)||[];
-  if(!mints.length){
+  var all=(board.mints)||[];
+  if(!all.length){
     list.innerHTML='<p class="lede">'+esc(emptyReason())+'</p>';
+    if($('liveMore')) $('liveMore').innerHTML='';
+    paintHistory();
     return;
   }
-  // Drop the empty-state paragraph once there is something to show.
   var stale=list.querySelector('p.lede');
   if(stale) stale.remove();
+
+  // Ten at a time. More than that on screen at once and the top of the list
+  // stops being the thing you look at.
+  var mints=all.slice(0, LIVE_PAGE*livePage);
 
   var seen={};
   for(var i=0;i<mints.length;i++){
     var m=mints[i], id='m_'+m.contract.toLowerCase();
     seen[id]=true;
     var el=document.getElementById(id);
-    if(!el){
+    var isNew=!el;
+    if(isNew){
       el=liveCardShell(m);
       el.id=id;
       list.appendChild(el);
     }
     paintCard(el,m);
-    // Keep display order in step with the server's ranking.
+    // Arriving at the top is the whole signal; say so once.
+    if(isNew && i===0) el.classList.add('fresh');
     if(list.children[i]!==el) list.insertBefore(el,list.children[i]||null);
   }
 
   for(var j=list.children.length-1;j>=0;j--){
     var child=list.children[j];
-    if(!seen[child.id]) list.removeChild(child);
+    if(child.id && !seen[child.id]) list.removeChild(child);
   }
+
+  var more=$('liveMore');
+  if(more){
+    var left=all.length-mints.length;
+    more.innerHTML = left>0
+      ? '<div class="acts"><button onclick="showMore()">Show '+
+        Math.min(LIVE_PAGE,left)+' more</button>'+
+        '<span class="mute" style="font-size:12px">'+esc(mints.length)+' of '+
+        esc(all.length)+'</span></div>'
+      : '';
+  }
+  paintHistory();
+}
+
+/** Collections seen earlier that are no longer minting. */
+function paintHistory(){
+  var el=$('histList'), wrap=$('liveHist');
+  if(!el||!wrap) return;
+
+  var live={}, rows=[];
+  var current=(board&&board.mints)||[];
+  for(var i=0;i<current.length;i++) live[current[i].contract]=true;
+
+  var keys=Object.keys(liveHistory);
+  for(var k=0;k<keys.length;k++){
+    if(live[keys[k]]) continue;
+    rows.push(liveHistory[keys[k]]);
+  }
+  rows.sort(function(a,b){ return b.at-a.at; });
+
+  wrap.style.display = rows.length? '' : 'none';
+  wrap.querySelector('summary').textContent =
+    'Earlier this session (' + rows.length + ')';
+
+  var out=[];
+  for(var r=0;r<rows.length && r<40;r++){
+    var m=rows[r].row;
+    out.push('<div class="mintcard out" onclick="openLive(\''+esc(addrOnly(m.contract))+'\')">'+
+      '<div class="thumb ph">◆</div>'+
+      '<div class="grow"><div class="name">'+esc(m.name||shortAddr(m.contract))+'</div>'+
+      '<div class="strip">'+metricStrip(m)+'</div></div>'+
+      '<div class="pct">'+num(m.progressPct===undefined||m.progressPct===null? '—'
+        : Math.round(m.progressPct),'m')+'</div></div>');
+  }
+  el.innerHTML=out.join('');
 }
 
 /** Why the list is empty, in the server's own accounting. */
@@ -872,58 +970,56 @@ function emptyReason(){
   var bits=[];
   if(x.belowFloor) bits.push(esc(x.belowFloor)+' had fewer mints than the floor');
   if(x.notNft) bits.push(esc(x.notNft)+' turned out not to be NFT contracts');
+  if(x.unreadable) bits.push(esc(x.unreadable)+' could not be identified');
   if(x.notInspected) bits.push(esc(x.notInspected)+' were past the read budget');
-  return 'Saw '+esc(x.seen)+' contract(s) being called, but none made the board'+
-    (bits.length? ': '+bits.join(', ') : '')+'.';
+  return 'Saw '+esc(x.seen)+' contract(s) being called, but none were verified '+
+    'collections'+(bits.length? ': '+bits.join(', ') : '')+'.';
 }
 
 /**
  * One row, split into a part that persists and parts that get rewritten.
  *
  * The artwork lives outside everything that changes. A row's numbers move on
- * every refresh, so rewriting the whole card would destroy and recreate its
+ * every refresh, so rewriting the whole row would destroy and recreate its
  * <img> twenty seconds apart — which is exactly what made the thumbnails blink
  * out. The image element is created once and then left alone for as long as the
  * collection is on the board.
  */
 function liveCardShell(m){
   var card=document.createElement('div');
-  card.className='mintcard liverow'+(m.soldOut?' out':'');
+  card.className='mintcard';
+  var addr=addrOnly(m.contract);
+  if(addr) card.onclick=function(e){
+    // The action button has its own job; everything else opens the detail.
+    if(e.target.closest('button')) return;
+    openLive(addr);
+  };
 
-  var head=document.createElement('div');
-  head.className='head';
-
-  var img=safeUrl(m.imageUrl);
-  var art;
+  var img=safeUrl(m.imageUrl), art;
   if(img){
     art=document.createElement('img');
-    art.className='thumb';
-    art.alt='';
-    art.decoding='async';
-    art.src=img;
+    art.className='thumb'; art.alt=''; art.decoding='async'; art.src=img;
     art.onerror=function(){ this.replaceWith(placeholderArt()); };
   } else {
     art=placeholderArt();
   }
   art.setAttribute('data-art','');
-  head.appendChild(art);
+  card.appendChild(art);
 
-  var title=document.createElement('div');
-  title.className='grow';
-  title.style.cssText='flex:1;min-width:0';
-  title.setAttribute('data-title','');
-  head.appendChild(title);
+  var mid=document.createElement('div');
+  mid.className='grow';
+  mid.setAttribute('data-mid','');
+  card.appendChild(mid);
 
-  var right=document.createElement('div');
-  right.className='right';
-  right.setAttribute('data-right','');
-  head.appendChild(right);
+  var pct=document.createElement('div');
+  pct.className='pct';
+  pct.setAttribute('data-pct','');
+  card.appendChild(pct);
 
-  card.appendChild(head);
-
-  var rest=document.createElement('div');
-  rest.setAttribute('data-rest','');
-  card.appendChild(rest);
+  var go=document.createElement('div');
+  go.setAttribute('data-go','');
+  go.style.flex='none';
+  card.appendChild(go);
   return card;
 }
 
@@ -936,9 +1032,9 @@ function placeholderArt(){
 
 /** Rewrite only the parts of a row that can change between refreshes. */
 function paintCard(card,m){
-  card.className='mintcard liverow'+(m.soldOut?' out':'');
+  card.className='mintcard'+(m.soldOut?' out':'')+
+    (card.classList.contains('fresh')?' fresh':'');
 
-  // Swap the artwork only if it actually became available or changed.
   var art=card.querySelector('[data-art]'), img=safeUrl(m.imageUrl);
   if(img && (art.tagName!=='IMG' || art.getAttribute('src')!==img)){
     var next=document.createElement('img');
@@ -948,9 +1044,11 @@ function paintCard(card,m){
     art.replaceWith(next);
   }
 
-  setHtml(card.querySelector('[data-title]'), liveTitle(m));
-  setHtml(card.querySelector('[data-right]'), liveRight(m));
-  setHtml(card.querySelector('[data-rest]'), liveRest(m));
+  setHtml(card.querySelector('[data-mid]'),
+    '<div class="name">'+esc(m.name||shortAddr(m.contract))+'</div>'+
+    '<div class="strip">'+metricStrip(m)+'</div>');
+  setHtml(card.querySelector('[data-pct]'), pctBlock(m));
+  setHtml(card.querySelector('[data-go]'), goButton(m));
 }
 
 /** Write only when the markup differs; an identical write restarts animations. */
@@ -958,103 +1056,77 @@ function setHtml(el,html){
   if(el && el.getAttribute('data-h')!==html){ el.innerHTML=html; el.setAttribute('data-h',html); }
 }
 
-function liveTitle(m){
-  var tag = m.isFree? 'free' : m.priceEth+' ETH';
-  if(m.phase) tag+=' · '+(m.phase==='allowlist'? 'allowlist round' : m.phase);
-  return '<div class="k">'+esc(tag)+'</div>'+
-    '<div class="name">'+esc(m.name||shortAddr(m.contract))+'</div>';
-}
-
-function liveRight(m){
-  var pct = m.progressPct!==undefined && m.progressPct!==null
-    ? Math.max(0,Math.min(100,m.progressPct)) : null;
-  return num(pct===null? '—' : Math.round(pct),'l')+
-    '<span class="glyph mute" style="font-size:11px">'+(pct===null?'':'%')+'</span>';
-}
-
-function liveRest(m){
-  var addr=addrOnly(m.contract);
-  var pct = m.progressPct!==undefined && m.progressPct!==null
-    ? Math.max(0,Math.min(100,m.progressPct)) : null;
-  var moving = !m.soldOut && m.status==='live';
-  var out=[];
-
-  if(pct!==null){
-    out.push('<div class="bar'+(m.soldOut?' done':(moving?' moving':''))+'">'+
-      '<div style="width:'+pct.toFixed(1)+'%"></div></div>');
-    out.push('<div class="hint">'+esc(m.totalSupply)+' of '+esc(m.maxSupply)+' minted'+
-      (m.remaining&&!m.soldOut? ' · '+esc(m.remaining)+' left':'')+'</div>');
-  } else {
-    out.push('<div class="hint">Supply is not readable from this contract.</div>');
+/**
+ * The metric strip: every number with its verdict.
+ *
+ * Green and red are decided on the server, next to the thresholds the hunter
+ * uses, so a row that reads green here is one the automatic side would look at
+ * twice. The page only paints them.
+ */
+function metricStrip(m){
+  var out=[], ms=m.metrics||[];
+  for(var i=0;i<ms.length;i++){
+    // The short form folds the label into the value, so every metric fits
+    // rather than the last few falling off the end of the line.
+    out.push('<b class="'+esc(ms[i].tone)+'" title="'+esc(ms[i].value)+'">'+
+      esc(ms[i].short||ms[i].value)+'</b>');
   }
-
-  for(var e=0;e<(m.events||[]).length;e++)
-    out.push('<span class="ev '+esc(m.events[e].kind)+'"><span class="dot"></span>'+
-      esc(m.events[e].text)+'</span>');
-
-  // Say what we could and could not establish, rather than quietly dropping
-  // the row or quietly implying it is vouched for.
-  if(m.kind==='unverified')
-    out.push('<span class="ev"><span class="dot"></span>unverified contract</span>');
-
-  out.push('<div class="meta">');
-  out.push(mini('speed', esc(m.mintsPerMinute)+'/min'));
-  out.push(mini('wallets', esc(m.uniqueMinters)));
-  out.push(mini('price', m.isFree? 'free' : esc(m.priceEth)+' ETH'));
-  if(m.maxPerWallet) out.push(mini('max each', esc(m.maxPerWallet)));
-  if(m.projectedSelloutSec!==undefined&&m.projectedSelloutSec!==null&&!m.soldOut)
-    out.push(mini('gone in', fmtDur(m.projectedSelloutSec)));
-  out.push('</div>');
-
-  var state=minting[m.contract];
-  out.push('<div class="acts">');
-  if(m.soldOut){
-    out.push('<button disabled>Minted out</button>');
-  } else if(m.phase==='allowlist'){
-    out.push('<button onclick="mintNow(\''+esc(addr)+'\')"'+(state==='busy'?' disabled':'')+
-      '>Try anyway</button>');
-    out.push('<span class="mute" style="font-size:11.5px">allowlist round — only listed '+
-      'wallets can mint</span>');
-  } else {
-    out.push('<button class="'+(m.kind==='unverified'?'':'solid')+'" onclick="mintNow(\''+
-      esc(addr)+'\')"'+(state==='busy'?' disabled':'')+'>'+
-      (state==='busy'? '<span class="spin"></span> minting' :
-        (isPractice()? 'Practice mint' : 'Mint now'))+'</button>');
-  }
-  if(addr) out.push('<button class="link" onclick="openLive(\''+esc(addr)+'\')">details</button>');
-  out.push('</div>');
-
-  if(state && state!=='busy') out.push(msg(state.ok?'ok':'warn', esc(state.text)));
   return out.join('');
 }
 
-function mini(k,v){
-  return '<div><div class="k">'+esc(k)+'</div><div class="num m" style="margin-top:4px">'+
-    v+'</div></div>';
+function pctBlock(m){
+  var pct = m.progressPct!==undefined && m.progressPct!==null
+    ? Math.max(0,Math.min(100,m.progressPct)) : null;
+  if(pct===null) return '<div class="num m mute">—</div>';
+  var moving = !m.soldOut && m.status==='live';
+  return num(Math.round(pct),'m')+
+    '<div class="minibar'+(m.soldOut?' done':(moving?' moving':''))+'">'+
+    '<div style="width:'+pct.toFixed(1)+'%"></div></div>';
+}
+
+function goButton(m){
+  var addr=addrOnly(m.contract), state=minting[m.contract];
+
+  // The outcome replaces the button. A dense row has no space for a paragraph,
+  // so the detail rides along in the tooltip and the full text goes to the log.
+  if(state && state!=='busy')
+    return '<button class="go" title="'+esc(state.text)+'" '+
+      'onclick="mintNow(\''+esc(addr)+'\')">'+
+      (state.ok? '<span class="good">✓ done</span>' : '<span class="bad">failed</span>')+
+      '</button>';
+
+  if(m.soldOut) return '<button class="go" disabled>out</button>';
+  if(!addr) return '';
+  if(state==='busy') return '<button class="go" disabled><span class="spin"></span></button>';
+  if(m.phase==='allowlist')
+    return '<button class="go" onclick="mintNow(\''+esc(addr)+'\')" title="Allowlist round '+
+      '— only listed wallets can mint">try</button>';
+  return '<button class="go solid" onclick="mintNow(\''+esc(addr)+'\')">'+
+    (isPractice()?'test':'mint')+'</button>';
 }
 
 /** Reuse the detail screen by shaping a board row like a stored finding. */
 function openLive(contract){
-  for(var i=0;i<((board&&board.mints)||[]).length;i++){
-    var m=board.mints[i];
-    if(m.contract!==contract) continue;
-    selected={
-      contract:m.contract, name:m.name, imageUrl:m.imageUrl,
-      score:undefined, passed:false,
-      mintsPerMinute:m.mintsPerMinute, uniqueMinters:m.uniqueMinters,
-      remaining:m.remaining, progressPct:m.progressPct,
-      projectedSelloutSec:m.projectedSelloutSec,
-      firstSeenAt:new Date(Date.now()-m.ageSec*1000).toISOString(),
-      lastSeenAt:new Date().toISOString(), timesSeen:1,
-      reason:m.events.map(function(e){ return e.text; }).join(' · '),
-      failedChecks:[], live:m,
-    };
-    // Stop watching while looking at one row: the board holds the sequencer
-    // feed open for twenty seconds a round and nothing here needs it.
-    stopBoard();
-    view='detail'; render(); window.scrollTo({top:0,behavior:'smooth'});
-    return;
-  }
+  var m=null, pool=((board&&board.mints)||[]);
+  for(var i=0;i<pool.length;i++) if(pool[i].contract===contract) m=pool[i];
+  if(!m && liveHistory[contract]) m=liveHistory[contract].row;
+  if(!m) return;
+
+  selected={
+    contract:m.contract, name:m.name, imageUrl:m.imageUrl,
+    score:undefined, passed:false,
+    mintsPerMinute:m.mintsPerMinute, uniqueMinters:m.uniqueMinters,
+    remaining:m.remaining, progressPct:m.progressPct,
+    projectedSelloutSec:m.projectedSelloutSec,
+    firstSeenAt:new Date(Date.now()-m.ageSec*1000).toISOString(),
+    lastSeenAt:new Date().toISOString(), timesSeen:1,
+    reason:(m.events||[]).map(function(e){ return e.text; }).join(' · '),
+    failedChecks:[], live:m,
+  };
+  // Stop watching while looking at one row: the board holds the sequencer
+  // feed open for twenty seconds a round and nothing here needs it.
+  stopBoard();
+  view='detail'; render(); window.scrollTo({top:0,behavior:'smooth'});
 }
 
 async function mintNow(contract){
@@ -1062,7 +1134,8 @@ async function mintNow(contract){
   if(!isPractice() && !confirm('Mint this now?\n\nIt spends real gas from every funded '+
     'wallet on your account.')) return;
 
-  minting[contract]='busy'; render();
+  minting[contract]='busy';
+  if(view==='live' && $('liveList')) paintLive(); else render();
   try{
     var r=await api('/api/mintnow',{method:'POST',
       body:JSON.stringify({contract:contract,dryRun:isPractice()})});
@@ -1080,7 +1153,7 @@ async function mintNow(contract){
     minting[contract]={ok:false,text:e.message};
     log('Mint failed — '+e.message);
   }
-  render();
+  if(view==='live' && $('liveList')) paintLive(); else render();
   loadFindings();
 }
 
