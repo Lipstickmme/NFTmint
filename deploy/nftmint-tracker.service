@@ -1,0 +1,69 @@
+# The tracker as a system service, for a VM without Docker.
+#
+# Install with deploy/setup-vps.sh, or by hand:
+#   cp deploy/nftmint-tracker.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now nftmint-tracker
+
+[Unit]
+Description=NFTmint sequencer-feed tracker
+Documentation=file:///opt/nftmint/docs/MIGRATION.md
+# network-online rather than network: the feed is a WebSocket to a remote host,
+# and starting before DNS resolves just means a first connection that fails.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nftmint
+Group=nftmint
+WorkingDirectory=/opt/nftmint
+EnvironmentFile=/opt/nftmint/.env
+ExecStart=/usr/bin/node dist/src/cli.js serve
+
+# The point of this host is that it never stops listening, so a crash is
+# something to recover from rather than to leave stopped. StartLimit is set
+# wide enough that a genuinely broken config still gives up eventually instead
+# of restarting forever.
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=20
+
+# SIGINT is what the CLI installs a handler for: it closes the feed and the
+# HTTP server, then exits. SIGTERM would kill it outright.
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+# Storage. StateDirectory creates and owns /var/lib/nftmint; 0700 because the
+# accounts file in there holds sealed wallet keys.
+StateDirectory=nftmint
+StateDirectoryMode=0700
+Environment=DATA_DIR=/var/lib/nftmint
+
+# Hardening. This process needs one outbound WebSocket, one listening socket
+# and one directory it can write to; everything else is closed off, so a
+# dependency that turns out to be hostile has very little to reach for.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Logs go to the journal, which rotates. An always-on feed writing to an
+# unrotated file is how a small disk fills.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftmint
+
+[Install]
+WantedBy=multi-user.target

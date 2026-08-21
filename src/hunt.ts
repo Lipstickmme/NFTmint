@@ -5,8 +5,8 @@ import {
   type HuntRuntime,
 } from './config.js';
 import { RpcClient } from './rpc.js';
-import { FeedConsumer } from './feed.js';
-import { MintTracker, type TrackedCollection } from './tracker.js';
+import { collectSnapshot } from './snapshot.js';
+import type { TrackedCollection } from './tracker.js';
 import { parseExtraSelectors } from './mintdetect.js';
 import { inspectContract, type ContractInfo } from './inspect.js';
 import { evaluate, formatDuration, type Evaluation, type HuntCriteria } from './criteria.js';
@@ -86,6 +86,12 @@ export interface HuntReport {
   dryRun: boolean;
   criteria: HuntCriteria;
   note: string;
+  /**
+   * Whether a persistent tracker supplied the collections or this cycle held
+   * the feed open itself. Reported because it changes both what the cycle cost
+   * and how much history the ranking is based on.
+   */
+  source: 'upstream' | 'feed';
 }
 
 /** Serializable form of the criteria, for the API and UI. */
@@ -147,40 +153,34 @@ export async function runHuntCycle(
   const startedAt = new Date().toISOString();
   const trackerCfg = loadTrackerConfig(base);
 
-  // ── 1. Sample the feed ───────────────────────────────────────────────────
-  const tracker = new MintTracker({
-    velocityWindowSec: trackerCfg.velocityWindowSec,
-    minAttempts: trackerCfg.minAttempts,
-    minUniqueMinters: trackerCfg.minUniqueMinters,
-    maxContractAgeSec: trackerCfg.maxContractAgeSec,
-    freeOnly: hunt.criteria.freeOnly,
-    // Unique minters are a hard gate here, so recovery must be on despite the cost.
-    trackUniqueMinters: true,
-    maxContracts: trackerCfg.maxContracts,
-    evictAfterSec: trackerCfg.evictAfterSec,
-    extraSelectors: parseExtraSelectors(trackerCfg.extraSelectorsRaw),
-  });
+  // ── 1. Find out what is minting ──────────────────────────────────────────
+  // From a persistent tracker when one is configured, otherwise by holding the
+  // feed open here for the window. See src/snapshot.ts for why that difference
+  // is the difference between free and expensive.
+  const sampled = await collectSnapshot(
+    {
+      windowSec: hunt.windowSec,
+      limit: 100,
+      freeOnly: hunt.criteria.freeOnly,
+      tracker: {
+        velocityWindowSec: trackerCfg.velocityWindowSec,
+        minAttempts: trackerCfg.minAttempts,
+        minUniqueMinters: trackerCfg.minUniqueMinters,
+        maxContractAgeSec: trackerCfg.maxContractAgeSec,
+        freeOnly: hunt.criteria.freeOnly,
+        // Unique minters are a hard gate here, so recovery must be on despite the cost.
+        trackUniqueMinters: true,
+        maxContracts: trackerCfg.maxContracts,
+        evictAfterSec: trackerCfg.evictAfterSec,
+        extraSelectors: parseExtraSelectors(trackerCfg.extraSelectorsRaw),
+      },
+    },
+    base,
+  );
 
-  const feed = new FeedConsumer({ url: trackerCfg.feedUrl });
-  let feedConnected = false;
-  feed.on('open', () => {
-    feedConnected = true;
-  });
-  feed.on('error', () => {
-    /* the consumer logs and reconnects; sampling continues */
-  });
-  feed.on('tx', (tx, msg) => tracker.ingest(tx, msg?.sequenceNumber));
-  feed.start();
-
-  await new Promise((r) => setTimeout(r, hunt.windowSec * 1000));
-  feed.stop();
-
-  const snapshot = tracker.snapshot(100);
-  const observed = {
-    feedTxSeen: tracker.totalSeen,
-    mintsSeen: tracker.totalMints,
-    contractsTracked: tracker.size(),
-  };
+  const snapshot = sampled.collections;
+  const feedConnected = sampled.feedConnected;
+  const observed = sampled.observed;
 
   // ── 2. Pre-filter, then inspect survivors ────────────────────────────────
   const shortlist = snapshot
@@ -279,20 +279,25 @@ export async function runHuntCycle(
     worthKeeping.map((f) => recordFinding(f, base, identity?.namespace)),
   );
 
+  const fromTracker = sampled.source === 'upstream';
   return {
     startedAt,
     durationMs: Math.round(performance.now() - started),
-    sampledSeconds: hunt.windowSec,
+    // No seconds were spent on the feed when a tracker answered.
+    sampledSeconds: fromTracker ? 0 : hunt.windowSec,
     feedConnected,
-    feedUrl: trackerCfg.feedUrl,
+    feedUrl: fromTracker ? (sampled.upstream?.url ?? trackerCfg.feedUrl) : trackerCfg.feedUrl,
     observed,
     candidates,
     qualified,
     mintedCollections,
     dryRun: hunt.dryRun,
     criteria: hunt.criteria,
+    source: sampled.source,
     note: feedConnected
-      ? `Sampled ${hunt.windowSec}s; ${shortlist.length} of ${snapshot.length} collections were worth inspecting.`
+      ? `${
+          fromTracker ? 'From the tracker' : `Sampled ${hunt.windowSec}s`
+        }; ${shortlist.length} of ${snapshot.length} collections were worth inspecting.`
       : 'Could not connect to the sequencer feed — nothing was observed this cycle.',
   };
 }

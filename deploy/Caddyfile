@@ -1,0 +1,27 @@
+# TLS in front of the tracker.
+#
+# Caddy gets and renews a Let's Encrypt certificate on its own, which is the
+# whole reason it is here: the Vercel side sends TRACKER_UPSTREAM_TOKEN on every
+# request, and over plain HTTP that token is readable by anything on the path.
+
+{$TRACKER_DOMAIN} {
+	tls {$ACME_EMAIL}
+
+	# Only the read API is exposed. The dashboard at / is not published, because
+	# the UI already lives on Vercel and a second copy is a second thing to
+	# secure.
+	handle /api/* {
+		reverse_proxy tracker:8080
+	}
+
+	handle {
+		respond "nftmint tracker" 200
+	}
+
+	encode gzip
+
+	log {
+		output stdout
+		format console
+	}
+}

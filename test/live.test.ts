@@ -308,4 +308,20 @@ describe('describeBoard', () => {
     expect(note).not.toContain('Held back');
     expect(note).not.toContain('could not be read');
   });
+
+  it('does not claim a short window when a tracker did the watching', () => {
+    // The rows came from a host that has been listening for as long as it has
+    // been up. "Watched 20s" would make a thin board look like a broken feed.
+    const note = describeBoard(20, 3, { ...none, seen: 9, belowFloor: 6 }, 'upstream');
+
+    expect(note).not.toContain('20s');
+    expect(note).toContain('watching continuously');
+    expect(note).toContain('9 contract(s) seen, 3 shown');
+    expect(note).toContain('6 under the mint floor');
+  });
+
+  it('says the tracker saw nothing, rather than that the window was short', () => {
+    expect(describeBoard(20, 0, none, 'upstream')).toMatch(/watching continuously/);
+    expect(describeBoard(20, 0, none, 'upstream')).not.toContain('20s');
+  });
 });

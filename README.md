@@ -245,6 +245,10 @@ check wallet balances, no terminal needed.
 
 Full setup with exact settings: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
+Running the feed on an always-on host instead of inside the functions — which
+is what keeps the bill near zero — plus moving the repo, the Vercel project and
+the stored data between accounts: **[docs/MIGRATION.md](docs/MIGRATION.md)**.
+
 ```bash
 npm run dev      # same handlers Vercel deploys, at http://127.0.0.1:3000
 vercel --prod    # deploy
@@ -712,6 +716,7 @@ src/
   triggers.ts    now / time / poll / feed, with sub-ms scheduled firing
   mintdetect.ts  Mint-selector registry and free/paid classification
   tracker.ts     Per-contract velocity, unique minters, hot detection
+  snapshot.ts    What is minting: from a persistent tracker, or by sampling here
   autopilot.ts   Mass-mint orchestration with budget and safety rails
   hunt.ts        One cycle: watch the feed, judge, buy what qualifies
   criteria.ts    The rules, and the 0-100 score for how close a collection came
@@ -720,6 +725,7 @@ src/
   store.ts       The findings history on top of it
   accounts.ts    Wallet generation, sealing, and the RPC allowlist
   accountstore.ts Where accounts live, and how they authenticate
+  migrate.ts     Export/import, for moving accounts and history between hosts
   live.ts        The live board: what is minting, and what to say about it
   liveCache.ts   The working calldata behind each row, so Mint needs no re-scan
   origin.ts      Provider, region and latency for every endpoint in play
@@ -734,16 +740,18 @@ src/
 api/[...path].ts One serverless function; dispatches to src/routes/
 src/routes/      The route handlers themselves
 public/index.html  The web UI
-test/            562 tests, incl. end-to-end runs against a mock node
+test/            593 tests, incl. end-to-end runs against a mock node
+deploy/          Dockerfile entrypoint, systemd unit, Caddyfile, VPS setup script
 docs/RESEARCH.md   Research findings, design rationale, and sources
 docs/DEPLOYMENT.md Vercel + persistent host setup
+docs/MIGRATION.md  Moving accounts, hosts, and the feed off serverless
 ```
 
 ---
 
 ## Status and limits
 
-Verified offline: 168 tests pass and typecheck is clean, covering signature
+Verified offline: 593 tests pass and typecheck is clean, covering signature
 recovery, transaction field encoding, nonce allocation across wallets, Nitro
 feed decoding against synthetic frames (including malformed and adversarial
 input), tracker velocity and anti-bot thresholds, autopilot recipient

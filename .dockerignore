@@ -1,0 +1,32 @@
+# Keep secrets and local state out of the build context. Anything listed here
+# is invisible to COPY, which matters most for .env and data/: a build context
+# is not a private place, and an image layer is not a deletable one.
+.env
+.env.*
+!.env.example
+*.key
+keys.txt
+wallets.json
+data/
+*.backup.json
+backups/
+findings.json
+accounts.json
+
+.git
+.github
+node_modules
+dist
+coverage
+.vercel
+
+test
+docs
+README.md
+*.md
+
+.DS_Store
+.idea
+.vscode
+npm-debug.log*
+*.tsbuildinfo

@@ -14,6 +14,11 @@ data/
 findings.json
 accounts.json
 
+# Backups written by `npm run cli -- export`. Same contents as data/, so the
+# same rule applies: sealed is not published.
+*.backup.json
+backups/
+
 node_modules/
 dist/
 coverage/

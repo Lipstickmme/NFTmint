@@ -1,0 +1,71 @@
+# The tracker, on a host that stays on.
+#
+#   docker compose up -d --build          tracker only, reachable on localhost
+#   docker compose --profile tls up -d    tracker behind Caddy, with a real cert
+#
+# The port is published to 127.0.0.1 rather than 0.0.0.0 on purpose. Vercel does
+# have to reach this machine, but not over plain HTTP with the tracker token in
+# the clear — so exposure is a second, deliberate step: either the tls profile
+# below with a domain you own, or a Cloudflare Tunnel, which needs no open port
+# at all. docs/MIGRATION.md walks through both.
+
+services:
+  tracker:
+    build: .
+    image: nftmint-tracker:latest
+    container_name: nftmint-tracker
+    # Survives a reboot of the VPS, which a free tier will do to you eventually.
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 8080
+      TRACKER_HOST: 0.0.0.0
+      DATA_DIR: /data
+    volumes:
+      # Named, so `docker compose down` and a rebuild do not take the accounts
+      # with them. The sealed wallet keys live in here.
+      - tracker-data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    logging:
+      # A feed that never stops produces logs that never stop. Uncapped, they
+      # fill a free tier's small disk and take the tracker down with them.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    # Terminates TLS with an automatic Let's Encrypt certificate, so the token
+    # Vercel sends is not readable in transit. Needs a domain pointed at this
+    # machine and ports 80/443 open.
+    profiles: ["tls"]
+    image: caddy:2-alpine
+    container_name: nftmint-caddy
+    restart: unless-stopped
+    depends_on:
+      - tracker
+    environment:
+      # Set both in .env: TRACKER_DOMAIN=tracker.example.com, ACME_EMAIL=you@…
+      # Not marked required with `:?` — compose interpolates every service
+      # whether or not its profile is active, so that would break a plain
+      # `docker compose up` for anyone not using TLS here at all.
+      TRACKER_DOMAIN: ${TRACKER_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    command: >
+      sh -c 'test -n "$$TRACKER_DOMAIN" ||
+      { echo "Set TRACKER_DOMAIN in .env to the hostname pointed at this machine." >&2; exit 1; };
+      exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  tracker-data:
+  caddy-data:
+  caddy-config:

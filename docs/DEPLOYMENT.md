@@ -163,15 +163,29 @@ npm run serve                 # holds the feed open, serves /api/collections
 Then point the Vercel deployment at it:
 
 ```
-TRACKER_UPSTREAM_URL=https://your-host:8080
+TRACKER_UPSTREAM_URL=https://your-host
 TRACKER_UPSTREAM_TOKEN=<the same TRACKER_AUTH_TOKEN>
 ```
 
-Vercel then serves the UI and proxies, and its CPU use drops to ordinary API
-levels. The bot also gets *better*: continuous coverage instead of samples, and
-no cold start on the mint path — which matters on a chain that orders
+With that set, both loops stop opening a feed of their own: `runHuntCycle` and
+`runLiveBoard` fetch a ranked snapshot over HTTP instead (`src/snapshot.ts`).
+The duty cycle goes from ~46% to the milliseconds of one request, and the board
+reports `"source": "upstream"` with `"sampledSeconds": 0` so you can confirm it
+rather than assume it.
+
+The bot also gets *better*: continuous coverage instead of samples, and no cold
+start on the mint path — which matters on a chain that orders
 first-come-first-served, where the delay before your bytes leave is the whole
 race.
+
+If that tracker goes down, requests fail with a message naming it rather than
+quietly reverting to in-function sampling — the fallback would restore exactly
+the bill this setup removes, silently, at the worst moment.
+`TRACKER_UPSTREAM_FALLBACK=true` chooses the other trade.
+
+**Setting one up, on a free VPS, with the data moved across:**
+[MIGRATION.md](MIGRATION.md). It also covers moving the repo and the Vercel
+project to different accounts.
 
 ---
 

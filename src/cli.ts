@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { parse as parseDotenv } from 'dotenv';
 import { formatEther } from 'viem';
 import {
   describeConfig,
@@ -34,11 +36,16 @@ Commands:
   auto        Autopilot: track, then mass-mint hot free mints across all wallets.
   selector    Print the 4-byte selector for a function signature.
   networks    Show built-in network parameters.
+  export      Write accounts and history to a backup file, for moving hosts.
+  import      Load a backup file into the storage this environment describes.
 
 Environment is read from .env — see .env.example for every option.
 
 Flags:
   --log <debug|info|warn|error>   Verbosity (default: info)
+  --env <file>                    For export/import: read storage settings from
+                                  this file alone, so the old and the new host
+                                  can be described side by side.
 `;
 
 function parseFlags(argv: string[]): Record<string, string> {
@@ -384,6 +391,105 @@ function cmdNetworks(): void {
   );
 }
 
+/**
+ * Read the store described by one env file instead of the ambient environment.
+ *
+ * The whole file, and nothing else. Layering it over process.env would be the
+ * friendlier default and the wrong one: a KV_REST_API_URL still exported in the
+ * shell would beat a file that only names DATA_DIR, and the export would come
+ * from the host being left behind while appearing to come from the new one.
+ */
+function envFromFile(file: string): NodeJS.ProcessEnv {
+  const parsed = parseDotenv(readFileSync(file, 'utf8'));
+  if (Object.keys(parsed).length === 0) {
+    throw new Error(`${file} set no variables — check the path`);
+  }
+  return { ...parsed };
+}
+
+async function cmdExport(flags: Record<string, string>): Promise<void> {
+  const out = flags.out ?? flags.o;
+  if (!out) throw new Error('export needs --out <file>, e.g. --out backup.json');
+
+  const { exportData, describeBackup } = await import('./migrate.js');
+  const env = flags.env ? envFromFile(flags.env) : process.env;
+  const backup = await exportData(env, { includeLive: flags['include-live'] === 'true' });
+  const rows = describeBackup(backup);
+
+  writeFileSync(out, JSON.stringify(backup, null, 2), 'utf8');
+  // writeFileSync only applies a mode when it creates the file, so an existing
+  // world-readable backup would keep its old permissions without this.
+  chmodSync(out, 0o600);
+
+  log.info('Exported', {
+    file: out,
+    from: backup.source,
+    namespaces: rows.length,
+    rows: rows.reduce((n, r) => n + r.written, 0),
+  });
+  for (const row of rows) log.info(`  ${row.namespace}`, { rows: row.written });
+
+  if (rows.length === 0) {
+    log.warn(
+      `Nothing was exported. Source storage is "${backup.source}" — if that is memory, ` +
+        'this environment never had anywhere durable to read from.',
+    );
+  }
+  if (backup.namespaces.accounts) {
+    log.warn(
+      `${out} holds wallet keys sealed under ACCOUNT_ENCRYPTION_KEY. Keep it out of git, ` +
+        'move that key to the new host by a separate route, and delete the file when the move is done.',
+    );
+  }
+}
+
+async function cmdImport(flags: Record<string, string>): Promise<void> {
+  const from = flags.in ?? flags.i ?? flags.file;
+  if (!from) throw new Error('import needs --in <file>, e.g. --in backup.json');
+
+  const { importData, parseBackup, checkEncryptionKey, describeDestination } =
+    await import('./migrate.js');
+  const env = flags.env ? envFromFile(flags.env) : process.env;
+  const backup = parseBackup(readFileSync(from, 'utf8'));
+
+  // Checked before writing: an import that lands wallets the destination
+  // cannot open is worth stopping, not reporting afterwards.
+  const keys = checkEncryptionKey(backup, env);
+  if (keys.status === 'wrong-key' || keys.status === 'no-key') {
+    if (flags.force !== 'true') {
+      throw new Error(`${keys.reason}\nPass --force to import anyway (the wallets will not sign).`);
+    }
+    log.warn(keys.reason);
+  } else if (keys.status === 'ok') {
+    log.info('Encryption key opens the imported wallets', {
+      accounts: keys.accounts,
+      wallets: keys.wallets,
+    });
+  }
+
+  const summary = await importData(backup, env, {
+    overwrite: flags.overwrite === 'true',
+    dryRun: flags['dry-run'] === 'true',
+  });
+
+  log.info(summary.dryRun ? 'Import — dry run, nothing written' : 'Imported', {
+    from,
+    into: describeDestination(summary.destination),
+    rows: summary.written,
+    skipped: summary.skipped,
+  });
+  for (const row of summary.namespaces) {
+    log.info(`  ${row.namespace}`, { rows: row.written, skipped: row.skipped });
+  }
+
+  if (summary.skipped > 0 && flags.overwrite !== 'true') {
+    log.info('Skipped rows already exist at the destination. Re-run with --overwrite to replace them.');
+  }
+  if (summary.destination === 'memory') {
+    log.warn(describeDestination('memory'));
+  }
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const command = argv[0];
@@ -427,6 +533,12 @@ async function main(): Promise<void> {
       break;
     case 'networks':
       cmdNetworks();
+      break;
+    case 'export':
+      await cmdExport(flags);
+      break;
+    case 'import':
+      await cmdImport(flags);
       break;
     case undefined:
     case 'help':

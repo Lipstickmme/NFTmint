@@ -76,8 +76,13 @@ class FileHash implements KvHash {
   }
 
   private async write(rows: Record<string, string>): Promise<void> {
-    await mkdir(path.dirname(this.file), { recursive: true });
-    await writeFile(this.file, JSON.stringify(rows), 'utf8');
+    // Owner-only, because the accounts namespace lands here too and its rows
+    // carry sealed wallet keys. Sealed is not a reason to hand them to every
+    // account on a shared VPS. The mode applies when the file is created, so a
+    // data directory that predates this keeps its old permissions — the VPS
+    // setup script tightens those.
+    await mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
+    await writeFile(this.file, JSON.stringify(rows), { encoding: 'utf8', mode: 0o600 });
   }
 
   async get(key: string): Promise<string | undefined> { return (await this.read())[key]; }

@@ -1,8 +1,8 @@
 import { formatEther, type Address, type Hex } from 'viem';
 import { loadHuntRuntime, loadTrackerConfig } from './config.js';
 import { RpcClient } from './rpc.js';
-import { FeedConsumer } from './feed.js';
-import { MintTracker, type TrackedCollection } from './tracker.js';
+import { collectSnapshot } from './snapshot.js';
+import type { TrackedCollection } from './tracker.js';
 import { parseExtraSelectors } from './mintdetect.js';
 import { inspectContract, type ContractInfo } from './inspect.js';
 import { projectSelloutSec, formatDuration } from './criteria.js';
@@ -136,6 +136,13 @@ export interface LiveBoard {
   excluded: LiveExclusions;
   mints: LiveMint[];
   note: string;
+  /**
+   * Where the rows came from: a persistent tracker, or a feed sampled inside
+   * this request. Surfaced because the two are not the same age — an upstream
+   * answer describes a window that host has been watching continuously, and a
+   * sampled one describes the last few seconds only.
+   */
+  source: 'upstream' | 'feed';
 }
 
 export interface LiveOptions {
@@ -361,12 +368,20 @@ export function describeBoard(
   windowSec: number,
   shown: number,
   excluded: LiveExclusions,
+  source: 'upstream' | 'feed' = 'feed',
 ): string {
+  // The two sources describe different spans of time, and saying "watched 6s"
+  // about a host that has been listening for a week would be wrong in the
+  // direction that makes an empty board look like a broken one.
   if (excluded.seen === 0) {
-    return `Watched ${windowSec}s and saw no contracts being called at all.`;
+    return source === 'upstream'
+      ? 'The tracker is watching continuously and has seen no contracts being called at all.'
+      : `Watched ${windowSec}s and saw no contracts being called at all.`;
   }
 
-  const parts = [`Watched ${windowSec}s. ${excluded.seen} contract(s) seen, ${shown} shown.`];
+  const watched =
+    source === 'upstream' ? 'From the tracker, watching continuously.' : `Watched ${windowSec}s.`;
+  const parts = [`${watched} ${excluded.seen} contract(s) seen, ${shown} shown.`];
   const held: string[] = [];
   if (excluded.belowFloor > 0) held.push(`${excluded.belowFloor} under the mint floor`);
   if (excluded.notNft > 0) held.push(`${excluded.notNft} not NFT contracts`);
@@ -449,44 +464,36 @@ export async function runLiveBoard(
   const startedAt = new Date().toISOString();
   const trackerCfg = loadTrackerConfig(env);
 
-  const tracker = new MintTracker({
-    velocityWindowSec: trackerCfg.velocityWindowSec,
-    minAttempts: trackerCfg.minAttempts,
-    minUniqueMinters: 0,
-    maxContractAgeSec: trackerCfg.maxContractAgeSec,
-    // The board shows paid drops too; that is the point of a price column.
-    freeOnly: false,
-    trackUniqueMinters: true,
-    maxContracts: trackerCfg.maxContracts,
-    evictAfterSec: trackerCfg.evictAfterSec,
-    extraSelectors: parseExtraSelectors(trackerCfg.extraSelectorsRaw),
-    // Lower than the hunter's, for the same reason the floor is: a contract
-    // that never gets promoted never appears at all, and this page is supposed
-    // to show what is happening rather than decide what is worth happening.
-    promoteAfter: 3,
-  });
+  // A persistent tracker answers this in one request; without one, the feed is
+  // held open here for the window. src/snapshot.ts has the cost argument.
+  const sampled = await collectSnapshot(
+    {
+      windowSec: opts.windowSec,
+      limit: 200,
+      tracker: {
+        velocityWindowSec: trackerCfg.velocityWindowSec,
+        minAttempts: trackerCfg.minAttempts,
+        minUniqueMinters: 0,
+        maxContractAgeSec: trackerCfg.maxContractAgeSec,
+        // The board shows paid drops too; that is the point of a price column.
+        freeOnly: false,
+        trackUniqueMinters: true,
+        maxContracts: trackerCfg.maxContracts,
+        evictAfterSec: trackerCfg.evictAfterSec,
+        extraSelectors: parseExtraSelectors(trackerCfg.extraSelectorsRaw),
+        // Lower than the hunter's, for the same reason the floor is: a contract
+        // that never gets promoted never appears at all, and this page is
+        // supposed to show what is happening rather than decide what is worth
+        // happening.
+        promoteAfter: 3,
+      },
+    },
+    env,
+  );
 
-  const feed = new FeedConsumer({ url: trackerCfg.feedUrl });
-  let feedConnected = false;
-  feed.on('open', () => {
-    feedConnected = true;
-  });
-  feed.on('error', () => {
-    /* the consumer logs and reconnects; sampling continues */
-  });
-  feed.on('tx', (tx, msg) => tracker.ingest(tx, msg?.sequenceNumber));
-  feed.start();
-
-  await new Promise((r) => setTimeout(r, opts.windowSec * 1000));
-  feed.stop();
-
-  const observed = {
-    feedTxSeen: tracker.totalSeen,
-    mintsSeen: tracker.totalMints,
-    contractsTracked: tracker.size(),
-  };
-
-  const all = tracker.snapshot(200);
+  const feedConnected = sampled.feedConnected;
+  const observed = sampled.observed;
+  const all = sampled.collections;
   const passedFloor = all.filter((c) => c.attempts >= opts.minMints);
   const shortlist = passedFloor.slice(0, opts.inspectTop);
 
@@ -561,14 +568,17 @@ export async function runLiveBoard(
 
   return {
     startedAt,
-    sampledSeconds: opts.windowSec,
+    // Zero when a tracker answered: no seconds were spent sampling here, which
+    // is the entire reason for pointing at one.
+    sampledSeconds: sampled.source === 'upstream' ? 0 : opts.windowSec,
     feedConnected,
     observed,
     minMints: opts.minMints,
     excluded,
     mints,
+    source: sampled.source,
     note: feedConnected
-      ? describeBoard(opts.windowSec, mints.length, excluded)
+      ? describeBoard(opts.windowSec, mints.length, excluded, sampled.source)
       : 'Could not reach the sequencer feed, so nothing could be observed.',
   };
 }
