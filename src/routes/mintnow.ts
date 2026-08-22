@@ -6,7 +6,7 @@ import { loadHuntRuntime, loadHuntConfig } from '../config.js';
 import { RpcClient } from '../rpc.js';
 import { loadWallets } from '../wallet.js';
 import { inspectContract } from '../inspect.js';
-import { loadBillingConfig } from '../billing.js';
+import { loadBilling } from '../billing.js';
 import { mintCandidate } from '../hunt.js';
 import { recallLiveMint } from '../liveCache.js';
 import { authenticateAccount } from '../accountstore.js';
@@ -110,7 +110,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
         } as unknown as TrackedCollection;
 
         const minted = await mintCandidate({
-          billing: loadBillingConfig(),
+          billing: await loadBilling(),
           collection,
           info,
           config,

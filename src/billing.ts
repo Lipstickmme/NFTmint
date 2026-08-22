@@ -388,3 +388,224 @@ export async function payServiceFee(params: PayFeeParams): Promise<FeePayment | 
     return { fee, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// ── Prices the operator can change without a redeploy ────────────────────────
+
+/**
+ * Overrides stored alongside everything else durable.
+ *
+ * The environment sets the defaults; this is what the operator changes from the
+ * settings screen. Kept separate rather than written back over the environment
+ * so that clearing an override falls back to the deployment's own value instead
+ * of to a hardcoded one, and so the screen can show which is which.
+ *
+ * Amounts are strings because these rows are JSON and a bigint is not.
+ */
+export interface BillingOverrides {
+  enabled?: boolean;
+  recipient?: Address;
+  subscriptionWei?: string;
+  subscriptionNote?: string;
+  feePct?: number;
+  feeMaxWei?: string;
+  updatedAt?: string;
+}
+
+const SETTINGS_NAMESPACE = 'settings';
+const BILLING_KEY = 'billing';
+/** Prices must not quietly expire back to the defaults. */
+const NO_EXPIRY = 0;
+
+/** Everything a caller needs to render the settings screen honestly. */
+export interface ResolvedBilling extends BillingConfig {
+  /** Field names currently set by the operator rather than the environment. */
+  overridden: string[];
+  /** The environment's own values, so the screen can offer "reset to default". */
+  defaults: {
+    enabled: boolean;
+    recipient: Address;
+    subscriptionEth: string;
+    subscriptionNote: string;
+    feePct: number;
+    feeMaxEth: string;
+  };
+  updatedAt?: string;
+}
+
+export class BillingSettingError extends Error {}
+
+/** Both bounds in one place, so a stored row cannot dodge what the form enforces. */
+function clampPct(value: number): number {
+  return Math.min(Math.max(value, 0), 25);
+}
+
+function parseEthAmount(value: unknown, field: string): bigint {
+  const raw = String(value ?? '').trim();
+  if (!raw) throw new BillingSettingError(`${field} cannot be empty.`);
+  let wei: bigint;
+  try {
+    wei = parseEther(raw as `${number}`);
+  } catch {
+    throw new BillingSettingError(`${field} must be an amount in ETH, like 0.0015.`);
+  }
+  if (wei < 0n) throw new BillingSettingError(`${field} cannot be negative.`);
+  return wei;
+}
+
+/**
+ * Validate what came off the settings form.
+ *
+ * Only the fields present are touched, so the screen can save one at a time,
+ * and `null` clears an override rather than setting it to nothing — the
+ * difference between "the operator chose 0" and "the operator stopped
+ * choosing".
+ */
+export function parseBillingPatch(
+  input: Record<string, unknown>,
+  current: BillingOverrides = {},
+): BillingOverrides {
+  const next: BillingOverrides = { ...current };
+
+  const clear = (key: keyof BillingOverrides): void => {
+    delete next[key];
+  };
+
+  if ('enabled' in input) {
+    if (input.enabled === null) clear('enabled');
+    else next.enabled = Boolean(input.enabled);
+  }
+
+  if ('recipient' in input) {
+    if (input.recipient === null || String(input.recipient).trim() === '') clear('recipient');
+    else {
+      const address = String(input.recipient).trim();
+      if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+        throw new BillingSettingError(
+          'The payout address must be a 42-character 0x address. Check it carefully — ' +
+            'every payment and every fee goes there, and a wrong one cannot be undone.',
+        );
+      }
+      next.recipient = address as Address;
+    }
+  }
+
+  if ('subscriptionEth' in input) {
+    if (input.subscriptionEth === null) clear('subscriptionWei');
+    else next.subscriptionWei = parseEthAmount(input.subscriptionEth, 'The subscription price').toString();
+  }
+
+  if ('subscriptionNote' in input) {
+    const note = input.subscriptionNote === null ? '' : String(input.subscriptionNote).trim();
+    if (!note) clear('subscriptionNote');
+    else if (note.length > 200) {
+      throw new BillingSettingError('Keep the price note under 200 characters.');
+    } else next.subscriptionNote = note;
+  }
+
+  if ('feePct' in input) {
+    if (input.feePct === null) clear('feePct');
+    else {
+      const pct = Number(input.feePct);
+      if (!Number.isFinite(pct)) throw new BillingSettingError('The service fee must be a number.');
+      if (pct < 0 || pct > 25) {
+        throw new BillingSettingError(
+          'The service fee must be between 0 and 25 percent. Above that it stops being a fee ' +
+            'and starts being most of what the mint cost.',
+        );
+      }
+      next.feePct = clampPct(pct);
+    }
+  }
+
+  if ('feeMaxEth' in input) {
+    if (input.feeMaxEth === null) clear('feeMaxWei');
+    else next.feeMaxWei = parseEthAmount(input.feeMaxEth, 'The fee cap').toString();
+  }
+
+  next.updatedAt = new Date().toISOString();
+  return next;
+}
+
+async function readOverrides(env: NodeJS.ProcessEnv): Promise<BillingOverrides> {
+  try {
+    const { openHash } = await import('./kv.js');
+    const raw = await openHash(SETTINGS_NAMESPACE, env, NO_EXPIRY).get(BILLING_KEY);
+    return raw ? (JSON.parse(raw) as BillingOverrides) : {};
+  } catch {
+    // Unreadable settings fall back to the environment rather than taking the
+    // app down. Charging the deployment's default beats charging nothing while
+    // also refusing to serve.
+    return {};
+  }
+}
+
+/**
+ * The prices in force: the environment's defaults with the operator's changes
+ * layered on top.
+ *
+ * Async, unlike loadBillingConfig, because the overrides live in the same
+ * store as everything else. Callers on a request path should use this one;
+ * loadBillingConfig remains the answer when there is no store to ask.
+ */
+export async function loadBilling(env: NodeJS.ProcessEnv = process.env): Promise<ResolvedBilling> {
+  const base = loadBillingConfig(env);
+  const over = await readOverrides(env);
+  const overridden: string[] = [];
+
+  const take = <T>(key: string, value: T | undefined, fallback: T): T => {
+    if (value === undefined) return fallback;
+    overridden.push(key);
+    return value;
+  };
+
+  return {
+    enabled: take('enabled', over.enabled, base.enabled),
+    recipient: take('recipient', over.recipient, base.recipient),
+    subscriptionWei: take(
+      'subscriptionEth',
+      over.subscriptionWei === undefined ? undefined : BigInt(over.subscriptionWei),
+      base.subscriptionWei,
+    ),
+    subscriptionNote: take('subscriptionNote', over.subscriptionNote, base.subscriptionNote),
+    // Re-clamped on the way out: the form enforces the range, and a row edited
+    // by hand in the store should not be able to dodge it.
+    feePct: clampPct(take('feePct', over.feePct, base.feePct)),
+    feeMaxWei: take(
+      'feeMaxEth',
+      over.feeMaxWei === undefined ? undefined : BigInt(over.feeMaxWei),
+      base.feeMaxWei,
+    ),
+    overridden,
+    updatedAt: over.updatedAt,
+    defaults: {
+      enabled: base.enabled,
+      recipient: base.recipient,
+      subscriptionEth: formatEther(base.subscriptionWei),
+      subscriptionNote: base.subscriptionNote,
+      feePct: base.feePct,
+      feeMaxEth: formatEther(base.feeMaxWei),
+    },
+  };
+}
+
+/** Apply a validated change and return what is now in force. */
+export async function saveBilling(
+  input: Record<string, unknown>,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ResolvedBilling> {
+  const { openHash } = await import('./kv.js');
+  const hash = openHash(SETTINGS_NAMESPACE, env, NO_EXPIRY);
+
+  const current = await readOverrides(env);
+  const next = parseBillingPatch(input, current);
+
+  if (hash.kind === 'memory') {
+    throw new BillingSettingError(
+      'This deployment has no durable storage, so a price change would be lost on the next ' +
+        'restart. Attach KV (or set DATA_DIR) first, or set the price in the environment.',
+    );
+  }
+
+  await hash.set(BILLING_KEY, JSON.stringify(next));
+  return loadBilling(env);
+}

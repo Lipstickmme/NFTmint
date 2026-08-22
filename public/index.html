@@ -352,12 +352,12 @@
 
 <script>
 'use strict';
-var PAGE_VERSION = '15-billing';
+var PAGE_VERSION = '16-pricing';
 
 /* ── state ──────────────────────────────────────────────────────────────── */
 var view='mints', tab='passed', hunting=false, rounds=0, selected=null;
 var hist=null, origin=null, acctView=null, revealed=null, defaults=null, health=null;
-var billing=null, subMsg=null;
+var billing=null, subMsg=null, pricing=null, priceMsg=null;
 var board=null, boardTimer=null, minting={}, huntTimer=null, boardIdle=0;
 var seenArt=[], logLines=[], busyLabel='', signupNotice=null, statusInfo=null;
 
@@ -477,6 +477,10 @@ async function loadAccount(){
     // the deployment was configured with instead.
     try{ statusInfo=await api('/api/status'); }
     catch(e){ statusInfo={error:e.message}; }
+    // Pricing is the operator's, so it is fetched on the operator's screen and
+    // nowhere else. A failure here must not blank the rest of the page.
+    try{ pricing=await api('/api/billing'); }
+    catch(e){ pricing={error:e.message}; }
     render(); return;
   }
   try{ acctView=await api('/api/account'); }
@@ -1510,10 +1514,115 @@ function renderOperator(){
     'see how fast they are</button></div>');
   out.push('</div>');
 
+  out.push(renderPricing());
+
   if(s.observedChainId && s.observedChainId!==s.chainId)
     out.push('<div class="card flat">'+msg('err','Wrong network — the RPC reports chain '+
       esc(s.observedChainId)+', but NETWORK says '+esc(s.chainId)+'.')+'</div>');
   return out.join('');
+}
+
+/**
+ * Pricing, editable.
+ *
+ * Everything here also has an environment variable, and the environment is
+ * still the default — this only layers over it. That is why each field says
+ * whether it is currently yours or the deployment's, and why "use the default"
+ * is a button rather than something you achieve by blanking a box: on a price,
+ * "I set it to nothing" and "I stopped setting it" are different instructions.
+ *
+ * Takes effect on the next request. No redeploy, and no window where half the
+ * app is on the old price.
+ */
+function renderPricing(){
+  if(!pricing) return '';
+  var out=['<div class="card">'];
+  out.push('<div class="k">Pricing</div>');
+  if(pricing.error){ out.push(msg('err',esc(pricing.error)));
+    out.push('<div class="hint">Prices can still be set with the environment variables '+
+      'SUBSCRIPTION_PRICE_ETH, MINT_FEE_PCT, MINT_FEE_MAX_ETH and FEE_RECIPIENT.</div>');
+    out.push('</div>'); return out.join(''); }
+
+  var over=pricing.overridden||[], d=pricing.defaults||{};
+  var src=function(f){ return over.indexOf(f)>=0
+    ? '<span class="ok">yours</span>'
+    : '<span class="mute">from the environment</span>'; };
+  var reset=function(f){ return over.indexOf(f)>=0
+    ? ' · <button class="link" onclick="clearPrice(\''+f+'\')">use the default</button>' : ''; };
+
+  out.push('<p class="lede">'+(pricing.billingEnabled
+    ? 'Charging is on. Changes apply to the next request — no redeploy.'
+    : 'Charging is off. Nobody is billed for anything on this deployment.')+'</p>');
+
+  out.push('<div class="acts"><button class="'+(pricing.billingEnabled?'solid':'')+'" '+
+    'onclick="savePrice({enabled:'+(pricing.billingEnabled?'false':'true')+'})">'+
+    ic(pricing.billingEnabled?'check':'x')+
+    (pricing.billingEnabled?'Charging on':'Charging off')+'</button></div>');
+
+  out.push('<div style="margin-top:18px"><label for="pSub">Subscription price, ETH — '+
+    src('subscriptionEth')+reset('subscriptionEth')+'</label>'+
+    '<input id="pSub" class="mono" inputmode="decimal" value="'+esc(pricing.subscriptionEth)+
+    '" placeholder="'+esc(d.subscriptionEth||'0.0015')+'"></div>');
+  out.push('<div class="hint">For '+esc(pricing.days)+' days of auto-mint. Nothing here reads '+
+    'a price feed, so this is ETH and the dollar figure moves with the market.</div>');
+
+  out.push('<div style="margin-top:14px"><label for="pNote">What to tell users it is worth — '+
+    src('subscriptionNote')+reset('subscriptionNote')+'</label>'+
+    '<input id="pNote" value="'+esc(pricing.subscriptionNote)+'"></div>');
+  out.push('<div class="hint">Shown on their screen word for word. Keep it honest about the '+
+    'price moving.</div>');
+
+  out.push('<div style="margin-top:14px"><label for="pPct">Service fee, % of each mint\'s gas — '+
+    src('feePct')+reset('feePct')+'</label>'+
+    '<input id="pPct" class="mono" inputmode="decimal" value="'+esc(pricing.feePct)+
+    '" placeholder="'+esc(d.feePct===undefined?10:d.feePct)+'"></div>');
+  out.push('<div style="margin-top:14px"><label for="pCap">Most one fee can ever be, ETH — '+
+    src('feeMaxEth')+reset('feeMaxEth')+'</label>'+
+    '<input id="pCap" class="mono" inputmode="decimal" value="'+esc(pricing.feeMaxEth)+
+    '" placeholder="'+esc(d.feeMaxEth||'0.0002')+'"></div>');
+  out.push('<div class="hint">0 to 25%. The cap is what stops a congested block turning a '+
+    'fee into a surprise; users are shown both numbers.</div>');
+
+  out.push('<div style="margin-top:14px"><label for="pTo">Where payments and fees go — '+
+    src('recipient')+reset('recipient')+'</label>'+
+    '<input id="pTo" class="mono" spellcheck="false" value="'+esc(pricing.payTo)+
+    '" placeholder="'+esc(d.recipient||'0x…')+'"></div>');
+  out.push(msg('warn','Check this address character by character. Every subscription and '+
+    'every fee is sent here, and a wrong address cannot be undone.'));
+
+  out.push('<div class="acts"><button class="solid" onclick="savePrices()"'+
+    (busyLabel?' disabled':'')+'>'+ic('check')+'Save pricing</button>'+
+    (pricing.updatedAt? '<span class="mute" style="font-size:12px">last changed '+
+      esc(String(pricing.updatedAt).slice(0,10))+'</span>':'')+'</div>');
+  if(priceMsg) out.push(msg(priceMsg.kind,esc(priceMsg.text)));
+
+  out.push('<div class="hint" style="margin-top:14px">'+esc(pricing.summary||'')+'</div>');
+  out.push('</div>');
+  return out.join('');
+}
+
+async function savePrice(patch){
+  priceMsg=null; busyLabel='saving'; render();
+  try{
+    pricing=await api('/api/billing',{method:'PATCH',body:JSON.stringify(patch)});
+    priceMsg={kind:'ok',text:'Saved. In force from the next request.'};
+  }catch(e){ priceMsg={kind:'err',text:e.message}; }
+  finally{ busyLabel=''; render(); }
+}
+
+/** Blank the override for one field, so the environment's value applies again. */
+function clearPrice(field){
+  var patch={}; patch[field]=null; return savePrice(patch);
+}
+
+function savePrices(){
+  return savePrice({
+    subscriptionEth: $('pSub')? $('pSub').value.trim() : undefined,
+    subscriptionNote: $('pNote')? $('pNote').value.trim() : undefined,
+    feePct: $('pPct')? Number($('pPct').value.trim()) : undefined,
+    feeMaxEth: $('pCap')? $('pCap').value.trim() : undefined,
+    recipient: $('pTo')? $('pTo').value.trim() : undefined,
+  });
 }
 
 function plainRow(k,v,right){

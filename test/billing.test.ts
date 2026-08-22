@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { parseEther, formatEther, type Address, type Hex } from 'viem';
 import {
   describeCharges,
@@ -277,5 +277,151 @@ describe('what a new user is told before anything is spent', () => {
     expect(text).toContain('service fee');
     expect(text).toContain(FEE_RECIPIENT);
     expect(text).toContain(`${SUBSCRIPTION_DAYS} days`);
+  });
+});
+
+describe('prices the operator can change', () => {
+  let dir: string;
+  let env: NodeJS.ProcessEnv;
+
+  beforeEach(async () => {
+    const { mkdtemp } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const path = (await import('node:path')).default;
+    const { resetKv } = await import('../src/kv.js');
+    dir = await mkdtemp(path.join(tmpdir(), 'nftmint-billing-'));
+    env = { DATA_DIR: dir };
+    resetKv();
+  });
+
+  afterEach(async () => {
+    const { rm } = await import('node:fs/promises');
+    const { resetKv } = await import('../src/kv.js');
+    resetKv();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('starts from what the environment says, with nothing overridden', async () => {
+    const { loadBilling } = await import('../src/billing.js');
+
+    const resolved = await loadBilling({ ...env, MINT_FEE_PCT: '7' });
+
+    expect(resolved.feePct).toBe(7);
+    expect(resolved.overridden).toEqual([]);
+    expect(resolved.defaults.feePct).toBe(7);
+  });
+
+  it('takes a new price and keeps it', async () => {
+    const { saveBilling, loadBilling } = await import('../src/billing.js');
+    const { resetKv } = await import('../src/kv.js');
+
+    await saveBilling({ subscriptionEth: '0.004', feePct: 3 }, env);
+    resetKv();
+    const resolved = await loadBilling(env);
+
+    expect(resolved.subscriptionWei).toBe(parseEther('0.004'));
+    expect(resolved.feePct).toBe(3);
+    expect(resolved.overridden).toEqual(expect.arrayContaining(['subscriptionEth', 'feePct']));
+    // The environment's own value is still reported, so the screen can offer
+    // a way back to it.
+    expect(resolved.defaults.subscriptionEth).toBe('0.0015');
+  });
+
+  it('changes one field without disturbing the others', async () => {
+    const { saveBilling, loadBilling } = await import('../src/billing.js');
+
+    await saveBilling({ feePct: 12 }, env);
+    await saveBilling({ subscriptionEth: '0.01' }, env);
+
+    const resolved = await loadBilling(env);
+    expect(resolved.feePct).toBe(12);
+    expect(resolved.subscriptionWei).toBe(parseEther('0.01'));
+  });
+
+  it('clears an override back to the environment, which is not the same as zero', async () => {
+    const { saveBilling, loadBilling } = await import('../src/billing.js');
+
+    await saveBilling({ feePct: 0 }, env);
+    expect((await loadBilling(env)).feePct).toBe(0);
+
+    await saveBilling({ feePct: null }, env);
+    const resolved = await loadBilling(env);
+
+    expect(resolved.feePct).toBe(10);
+    expect(resolved.overridden).not.toContain('feePct');
+  });
+
+  it('turns billing off and on again', async () => {
+    const { saveBilling, loadBilling, subscriptionStatus } = await import('../src/billing.js');
+
+    await saveBilling({ enabled: false }, env);
+    const off = await loadBilling(env);
+
+    expect(off.enabled).toBe(false);
+    expect(subscriptionStatus(undefined, off).active).toBe(true);
+
+    await saveBilling({ enabled: true }, env);
+    expect((await loadBilling(env)).enabled).toBe(true);
+  });
+
+  it('moves the payout address only when it is a real address', async () => {
+    const { saveBilling, loadBilling } = await import('../src/billing.js');
+    const next = '0x1111111111111111111111111111111111111111';
+
+    await saveBilling({ recipient: next }, env);
+    expect((await loadBilling(env)).recipient).toBe(next);
+
+    // Every payment and every fee goes here; a typo is unrecoverable, so a
+    // half-typed address must not be storable.
+    await expect(saveBilling({ recipient: '0x1234' }, env)).rejects.toThrow(/42-character/);
+    expect((await loadBilling(env)).recipient).toBe(next);
+  });
+
+  it('refuses a fee percentage outside the range, and says why', async () => {
+    const { saveBilling } = await import('../src/billing.js');
+
+    await expect(saveBilling({ feePct: 60 }, env)).rejects.toThrow(/between 0 and 25/);
+    await expect(saveBilling({ feePct: -1 }, env)).rejects.toThrow(/between 0 and 25/);
+    await expect(saveBilling({ feePct: 'lots' }, env)).rejects.toThrow(/must be a number/);
+  });
+
+  it('refuses an amount that is not an amount', async () => {
+    const { saveBilling } = await import('../src/billing.js');
+
+    await expect(saveBilling({ subscriptionEth: 'five' }, env)).rejects.toThrow(/amount in ETH/);
+    await expect(saveBilling({ feeMaxEth: '' }, env)).rejects.toThrow(/cannot be empty/);
+  });
+
+  it('re-clamps a stored row that was edited by hand', async () => {
+    // The form enforces 0-25. Someone with access to the store is not going to
+    // be stopped by a form, so the ceiling is applied on read as well.
+    const { loadBilling } = await import('../src/billing.js');
+    const { openHash, resetKv } = await import('../src/kv.js');
+    await openHash('settings', env, 0).set('billing', JSON.stringify({ feePct: 400 }));
+    resetKv();
+
+    expect((await loadBilling(env)).feePct).toBe(25);
+  });
+
+  it('refuses to save where the change would not survive a restart', async () => {
+    const { saveBilling } = await import('../src/billing.js');
+    const { resetKv } = await import('../src/kv.js');
+    resetKv();
+
+    // No DATA_DIR and no KV: the store is memory, so a price set here would
+    // silently revert and start charging the old amount again.
+    await expect(saveBilling({ feePct: 5 }, {})).rejects.toThrow(/no durable storage/);
+  });
+
+  it('falls back to the environment when the settings row is unreadable', async () => {
+    const { loadBilling } = await import('../src/billing.js');
+    const { openHash, resetKv } = await import('../src/kv.js');
+    await openHash('settings', env, 0).set('billing', 'not json');
+    resetKv();
+
+    const resolved = await loadBilling(env);
+
+    expect(resolved.feePct).toBe(10);
+    expect(resolved.overridden).toEqual([]);
   });
 });

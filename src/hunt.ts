@@ -6,6 +6,7 @@ import {
 } from './config.js';
 import { RpcClient } from './rpc.js';
 import {
+  loadBilling,
   loadBillingConfig,
   networkCostOf,
   payServiceFee,
@@ -274,7 +275,7 @@ export async function runHuntCycle(
 
       candidate.minted = await mintCandidate({
         collection, info, config, wallets, primary,
-        billing: loadBillingConfig(base),
+        billing: await loadBilling(base),
         submitClients: [...submitOnly, ...clients],
         dryRun: hunt.dryRun,
         freeOnly: hunt.criteria.freeOnly,

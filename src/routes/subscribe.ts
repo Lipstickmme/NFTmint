@@ -4,7 +4,7 @@ import { authenticateAccount, saveAccount } from '../accountstore.js';
 import {
   describeCharges,
   extendSubscription,
-  loadBillingConfig,
+  loadBilling,
   PaymentError,
   SUBSCRIPTION_DAYS,
   subscriptionStatus,
@@ -38,7 +38,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     res,
     { methods: ['GET', 'POST'], publicRoute: true, limit: 'account' },
     async (body) => {
-      const billing = loadBillingConfig();
+      const billing = await loadBilling();
       const account = await authenticateAccount(
         header(req, 'x-account-id'),
         header(req, 'x-account-token'),
@@ -98,7 +98,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
 }
 
 /** What it costs, in the shape the UI renders. */
-function priceSheet(billing: ReturnType<typeof loadBillingConfig>) {
+function priceSheet(billing: Awaited<ReturnType<typeof loadBilling>>) {
   return {
     billingEnabled: billing.enabled,
     payTo: billing.recipient,

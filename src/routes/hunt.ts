@@ -6,7 +6,7 @@ import type { HuntIdentity } from '../hunt.js';
 import { mergeCriteria } from '../criteria.js';
 import { withSingleFlight } from '../ratelimit.js';
 import { authenticateAccount } from '../accountstore.js';
-import { loadBillingConfig, subscriptionStatus } from '../billing.js';
+import { loadBilling, subscriptionStatus } from '../billing.js';
 import { privateKeysOf } from '../accounts.js';
 
 /**
@@ -44,7 +44,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
       // off, or it has not paid for it. Both answer 200 with an explanation
       // rather than an error, because neither is a fault — the page polls this
       // endpoint on a loop and a red error every 45 seconds would be noise.
-      const billing = loadBillingConfig();
+      const billing = await loadBilling();
       const subscription = subscriptionStatus(account.subscription, billing);
       if (!account.autoMint || !subscription.active) {
         const paused = !account.autoMint;

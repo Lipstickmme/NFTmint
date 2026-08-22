@@ -66,6 +66,7 @@ const ROUTES: Record<string, () => Promise<unknown>> = {
   findings: () => import('../src/routes/findings.js'),
   account: () => import('../src/routes/account.js'),
   subscribe: () => import('../src/routes/subscribe.js'),
+  billing: () => import('../src/routes/billing.js'),
   origin: () => import('../src/routes/origin.js'),
 };
 

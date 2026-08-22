@@ -80,6 +80,20 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
   };
   let huntCalls = 0;
   let subscribed = false;
+  let pricing: Record<string, unknown> = {
+    billingEnabled: true,
+    payTo: '0x643548aB552dfD4E3B402d03c5723a12FcEFa446',
+    subscriptionEth: '0.0015',
+    subscriptionNote: 'about $5 a month',
+    days: 30, feePct: 10, feeMaxEth: '0.0002',
+    summary: 'Scanning and the live board are free.',
+    overridden: [] as string[],
+    defaults: {
+      enabled: true, recipient: '0x643548aB552dfD4E3B402d03c5723a12FcEFa446',
+      subscriptionEth: '0.0015', subscriptionNote: 'about $5 a month',
+      feePct: 10, feeMaxEth: '0.0002',
+    },
+  };
   let mintNowCalls: string[] = [];
 
   // Four rows spanning the states the board has to render: about to sell out,
@@ -227,6 +241,29 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
       });
     }
 
+    if (url.pathname === '/api/billing') {
+      if (!asOperator) return json({ error: 'Operator token required.' }, 401);
+      if (req.method === 'PATCH') {
+        return void readBody().then((body) => {
+          if ('feePct' in body) {
+            const pct = Number(body.feePct);
+            if (!Number.isFinite(pct) || pct < 0 || pct > 25) {
+              return json({ error: 'The service fee must be between 0 and 25 percent.' }, 400);
+            }
+            pricing = { ...pricing, feePct: pct, overridden: ['feePct'] };
+          }
+          if ('subscriptionEth' in body) {
+            pricing = { ...pricing, subscriptionEth: String(body.subscriptionEth) };
+          }
+          if (body.feePct === null) {
+            pricing = { ...pricing, feePct: 10, overridden: [] };
+          }
+          json({ ...pricing, saved: true });
+        });
+      }
+      return json(pricing);
+    }
+
     if (url.pathname === '/api/subscribe') {
       if (!signedIn) return json({ error: 'Sign in first.' }, 401);
       const sheet = {
@@ -357,6 +394,7 @@ function startStubServer(): Promise<{ server: http.Server; url: string; reset: (
     huntCalls = 0;
     mintNowCalls = [];
     subscribed = false;
+    pricing = { ...pricing, feePct: 10, subscriptionEth: '0.0015', overridden: [] };
     account = { ...account, autoMint: true, rpcUrl: undefined };
   };
 
@@ -919,6 +957,57 @@ describe('the charges, on screen', () => {
     expect(errors).toEqual([
       'Failed to load resource: the server responded with a status of 400 (Bad Request)',
     ]);
+    await page.close();
+  });
+
+  it('lets the operator change the fee without a redeploy', async () => {
+    const { page, errors } = await openPage(false);
+    await page.evaluate(() => localStorage.setItem('fm_optoken', 'operator-token-long-enough'));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.click('#navAccount');
+    await page.waitForSelector('#pPct', { timeout: 10_000 });
+
+    await page.fill('#pPct', '4');
+    await page.click('button:has-text("Save pricing")');
+    await page.waitForSelector('.msg.ok', { timeout: 8000 });
+
+    expect(await page.inputValue('#pPct')).toBe('4');
+    // The field now says whose value it is, so nobody has to guess whether a
+    // change actually took.
+    expect(await page.textContent('#app')).toContain('yours');
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it('refuses a fee outside the range and says the range', async () => {
+    const { page, errors } = await openPage(false);
+    await page.evaluate(() => localStorage.setItem('fm_optoken', 'operator-token-long-enough'));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.click('#navAccount');
+    await page.waitForSelector('#pPct', { timeout: 10_000 });
+
+    await page.fill('#pPct', '80');
+    await page.click('button:has-text("Save pricing")');
+    await page.waitForSelector('.msg.err', { timeout: 8000 });
+
+    expect(await page.textContent('.msg.err')).toMatch(/between 0 and 25/);
+    expect(errors).toEqual([
+      'Failed to load resource: the server responded with a status of 400 (Bad Request)',
+    ]);
+    await page.close();
+  });
+
+  it('warns the operator to check the payout address', async () => {
+    // Everything anyone pays goes there, and it cannot be undone.
+    const { page, errors } = await openPage(false);
+    await page.evaluate(() => localStorage.setItem('fm_optoken', 'operator-token-long-enough'));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.click('#navAccount');
+    await page.waitForSelector('#pTo', { timeout: 10_000 });
+
+    expect(await page.textContent('#app')).toMatch(/character by character/);
+    expect(await page.textContent('#app')).toMatch(/cannot be undone/);
+    expect(errors).toEqual([]);
     await page.close();
   });
 

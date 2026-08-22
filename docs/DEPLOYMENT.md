@@ -226,7 +226,24 @@ works locally works deployed; a test asserts the two tables agree.
 
 Off by one variable (`BILLING_ENABLED=false`) if you are running this for
 yourself. On a hosted deployment there are two charges, both paid on-chain to
-`FEE_RECIPIENT`:
+`FEE_RECIPIENT`.
+
+**Set them from the app, not from a redeploy.** Sign in with your `API_TOKEN`
+and the account screen gains a **Pricing** card: subscription price, the note
+users are shown about what it is worth, the fee percentage, the fee cap, the
+payout address, and a switch for charging at all. Changes take effect on the
+next request — every path that charges anything reads the same resolver.
+
+The environment variables below remain the defaults. The screen layers over
+them, marks each field *yours* or *from the environment*, and offers a way back
+— which is why clearing an override is a button rather than an empty box: on a
+price, "I set it to nothing" and "I stopped setting it" are different
+instructions. `GET`/`PATCH /api/billing` is the same thing over HTTP, operator
+token required.
+
+Saving needs durable storage. Without KV or `DATA_DIR` a price change would be
+lost on the next restart and silently revert to the old amount, so the app
+refuses rather than pretending.
 
 | | What | Default |
 | --- | --- | --- |
