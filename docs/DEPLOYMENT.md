@@ -222,6 +222,56 @@ works locally works deployed; a test asserts the two tables agree.
 
 ---
 
+## Billing: what the app charges the people using it
+
+Off by one variable (`BILLING_ENABLED=false`) if you are running this for
+yourself. On a hosted deployment there are two charges, both paid on-chain to
+`FEE_RECIPIENT`:
+
+| | What | Default |
+| --- | --- | --- |
+| Subscription | Unlocks auto-mint for 30 days | `SUBSCRIPTION_PRICE_ETH=0.0015` |
+| Service fee | Percentage of each landed mint's own gas | `MINT_FEE_PCT=10`, capped by `MINT_FEE_MAX_ETH=0.0002` |
+
+Free either way: scanning, the live board, the findings history, and the whole
+UI. Only the bot minting on someone's behalf is gated.
+
+**How a subscription is bought.** The UI shows the address and the amount. The
+user sends a plain ETH transfer from one of their own generated wallets, then
+posts the transaction hash to `POST /api/subscribe`. The server reads that
+transaction off the chain and checks it: included in a block, succeeded, sent
+to `FEE_RECIPIENT`, at least the asking price, and **from a wallet this account
+holds**. That last check is not optional — payments are public, so without it
+one person's transaction hash would unlock auto-mint for anyone who could read
+a block explorer. Paying early extends the period rather than replacing it.
+
+There is no card processor and nothing custodial: the money moves directly
+between the user's wallet and yours, on the chain the bot already uses.
+
+**How the service fee is taken.** After a mint confirms, one extra transfer goes
+from the minting wallet to `FEE_RECIPIENT`. Separate rather than folded into the
+mint, for two reasons: the mint's `value` belongs to the NFT contract, so there
+is nowhere to put a fee inside it; and a separate transaction is a separate line
+on the explorer under your address, which is what lets the person paying it
+check the charge.
+
+It is described to them as a service fee — its own name, the amount, the
+percentage, the address, and the sentence *"this is a charge by this app, not a
+network cost"*. That wording is asserted by tests. These are wallets the app
+generated and whose keys it holds; the only way the person paying knows about
+the fee is because the code tells them, so presenting it as part of gas would
+be misrepresenting who is charging them. If you want a fee that reads as
+smaller, lower `MINT_FEE_PCT` — do not relabel it.
+
+A fee that cannot be collected never fails the mint. If the wallet is too
+empty to cover it, the result says so and the user keeps their NFT.
+
+**Pricing note.** Nothing here reads a price feed, so the subscription is
+denominated in ETH and the dollar figure moves. `SUBSCRIPTION_PRICE_NOTE` is
+shown to users verbatim — keep it honest about that.
+
+---
+
 ## Security — read this part
 
 Putting `PRIVATE_KEYS` on Vercel means **every deployment of this project can

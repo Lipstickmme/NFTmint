@@ -79,16 +79,65 @@
   .row .grow{flex:1;min-width:0}
   .row .name{font-size:14.5px;font-weight:550;letter-spacing:-.02em;margin-top:2px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* Except a payment address, which has to be checkable in full — an ellipsis
+     there hides exactly the characters someone would use to spot a wrong one. */
+  .row .name.full{white-space:normal;overflow:visible;text-overflow:clip;
+    word-break:break-all;font-size:13px;line-height:1.35}
   .row .right{flex:none;display:flex;align-items:center;gap:9px}
   .glyph{font-size:15px;line-height:1;flex:none}
 
   /* ── buttons ──────────────────────────────────────────────────────────── */
+  /* Glass, not paint. Every button is a translucent pane over the page with a
+     lit top edge and a shadow beneath it, so it reads as a physical thing you
+     can press rather than a coloured rectangle. The transition is on transform
+     and shadow only — both composited, so a press stays smooth on a phone. */
   button{font-family:inherit;font-size:13.5px;font-weight:550;letter-spacing:-.015em;
-    cursor:pointer;border:none;background:var(--sunk);color:var(--ink);
-    padding:12px 20px;border-radius:99px}
+    cursor:pointer;border:none;color:var(--ink);
+    padding:12px 20px;border-radius:99px;position:relative;isolation:isolate;
+    background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.35)),var(--sunk);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(10,10,10,.05),
+      0 1px 2px rgba(10,10,10,.06);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    transition:transform .16s cubic-bezier(.2,.8,.2,1),box-shadow .16s ease,filter .16s ease}
+  button:hover:not(:disabled){transform:translateY(-1px);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 4px 12px rgba(10,10,10,.1)}
+  button:active:not(:disabled){transform:translateY(.5px) scale(.99);
+    box-shadow:inset 0 1px 3px rgba(10,10,10,.14)}
+  button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
   button:disabled{opacity:.35;cursor:not-allowed}
-  .solid{background:var(--inv);color:var(--inv-ink)}
-  .danger{background:var(--err);color:#fff}
+
+  /* The primary action: dark glass that glows. The glow is the button's own
+     colour thrown downward, not a generic drop shadow, so it reads as light
+     coming off the control. */
+  .solid{background:linear-gradient(180deg,#242423,var(--inv));color:var(--inv-ink);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 2px 6px rgba(10,10,10,.24),
+      0 8px 22px -8px rgba(10,10,10,.5)}
+  .solid:hover:not(:disabled){box-shadow:inset 0 1px 0 rgba(255,255,255,.22),
+    0 4px 10px rgba(10,10,10,.26),0 14px 34px -10px rgba(10,10,10,.58)}
+  .solid:active:not(:disabled){box-shadow:inset 0 2px 5px rgba(0,0,0,.4)}
+
+  /* Reserved for the one action a screen is actually about — paying, minting.
+     A slow breath rather than a blink: something you notice without it
+     demanding attention, and it stops the moment the pointer arrives. */
+  .glow{animation:pulse 3.2s ease-in-out infinite}
+  .glow:hover,.glow:active{animation:none}
+  @keyframes pulse{
+    0%,100%{box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 2px 6px rgba(10,10,10,.24),
+      0 8px 22px -8px rgba(10,10,10,.5)}
+    50%{box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 2px 8px rgba(10,10,10,.3),
+      0 16px 40px -8px rgba(10,10,10,.62)}
+  }
+  .danger{background:linear-gradient(180deg,#d0455c,var(--err));color:#fff;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 6px 18px -8px rgba(194,49,74,.7)}
+
+  /* Line icons, sized to the text they sit beside. currentColor throughout, so
+     one sprite works on both the light rows and the dark ones. */
+  .i{width:1em;height:1em;flex:none;vertical-align:-.125em;
+    fill:none;stroke:currentColor;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round}
+  .i.lg{width:1.25em;height:1.25em;stroke-width:1.6}
+  button .i{margin-right:7px;vertical-align:-.14em}
+  button.icon-only .i{margin-right:0}
   .wide{width:100%;padding:15px 22px;font-size:15px}
   .link{background:none;padding:0;font-size:12.5px;color:var(--mute);
     text-decoration:underline;text-underline-offset:3px;border-radius:0}
@@ -229,14 +278,43 @@
   @keyframes sp{to{transform:rotate(360deg)}}
 
   /* ── bottom nav ───────────────────────────────────────────────────────── */
-  .nav{position:fixed;left:0;right:0;bottom:20px;display:flex;justify-content:center;gap:9px;
-    z-index:20;pointer-events:none}
-  .nav button{pointer-events:auto;width:52px;height:52px;border-radius:50%;padding:0;
-    background:var(--card);font-size:18px;display:flex;align-items:center;justify-content:center;
-    box-shadow:0 6px 22px rgba(0,0,0,.10)}
-  .nav button.on{background:var(--inv);color:var(--inv-ink)}
+  /* Thumb-height and above the home indicator: this is a phone control first,
+     and a bar that sits under the iOS gesture area is a bar you cannot press. */
+  .nav{position:fixed;left:0;right:0;z-index:20;display:flex;justify-content:center;gap:9px;
+    pointer-events:none;bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+  .nav button{pointer-events:auto;width:54px;height:54px;border-radius:50%;padding:0;
+    background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(251,251,250,.78)),var(--card);
+    font-size:18px;display:flex;align-items:center;justify-content:center;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 8px 26px rgba(10,10,10,.14)}
+  .nav button .i{width:21px;height:21px;margin:0}
+  .nav button.on{background:linear-gradient(180deg,#242423,var(--inv));color:var(--inv-ink);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 10px 30px -8px rgba(10,10,10,.6)}
+  .nav button.on .i{stroke-width:1.9}
 
-  footer{text-align:center;color:var(--mute);font-size:11px;margin-top:16px}
+  /* ── mobile first ─────────────────────────────────────────────────────── */
+  /* The oversized numerals are the design, but 118px does not fit a 320px
+     screen — and a number that wraps stops being a number and becomes noise. */
+  @media (max-width:400px){
+    body{padding:16px 11px 116px}
+    .card{padding:20px 17px;border-radius:24px}
+    .num.xxl{font-size:88px} .num.xl{font-size:52px}
+    .display{font-size:35px}
+    h1{font-size:26px}
+    .acts button{flex:1 1 auto;min-width:0}
+  }
+  /* Coarse pointers get full-height targets and no hover lift — a phone has no
+     hover, and the transform just makes taps feel loose. */
+  @media (hover:none){
+    button:hover:not(:disabled){transform:none}
+    .row{padding:15px 16px}
+    button{min-height:44px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.001ms !important;transition-duration:.001ms !important}
+  }
+
+  footer{text-align:center;color:var(--mute);font-size:11px;margin-top:16px;
+    padding-bottom:env(safe-area-inset-bottom,0px)}
 </style>
 </head>
 <body>
@@ -245,20 +323,41 @@
   <footer id="build"></footer>
 </div>
 
-<div class="nav">
-  <button id="navMints"   onclick="go('mints')"   title="Mints">◎</button>
-  <button id="navLive"    onclick="go('live')"    title="Minting now">◉</button>
-  <button id="navAccount" onclick="go('account')" title="Your wallets">◍</button>
-  <button id="navRules"   onclick="go('rules')"   title="Rules">☰</button>
-</div>
+<!-- One sprite, referenced by <use> everywhere. Line icons at a single stroke
+     weight read as a set; the emoji they replaced rendered differently on every
+     platform and could not take the colour of the row they sat in. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <g id="ic-target"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></g>
+  <g id="ic-pulse"><path d="M2 12h4l3-7 4 14 3-7h6"/></g>
+  <g id="ic-wallet"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2"/></g>
+  <g id="ic-sliders"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></g>
+  <g id="ic-check"><path d="M4 12.5l5 5L20 6.5"/></g>
+  <g id="ic-x"><path d="M6 6l12 12M18 6L6 18"/></g>
+  <g id="ic-spark"><path d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z"/></g>
+  <g id="ic-key"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M15 12v2"/></g>
+  <g id="ic-copy"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></g>
+  <g id="ic-power"><path d="M12 4v8"/><path d="M7.5 6.5a7 7 0 1 0 9 0"/></g>
+  <g id="ic-clock"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g>
+  <g id="ic-arrow"><path d="M5 12h13M13 6.5l5.5 5.5L13 17.5"/></g>
+  <g id="ic-warn"><path d="M12 4.5L21 20H3z"/><path d="M12 10v4.5M12 17.4v.2"/></g>
+  <g id="ic-link"><path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.3 1.3"/><path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.6 2.6a4 4 0 0 0 5.7 5.7l1.3-1.3"/></g>
+</defs></svg>
+
+<nav class="nav" aria-label="Sections">
+  <button id="navMints"   onclick="go('mints')"   title="Mints"        aria-label="Mints">      <svg class="i" viewBox="0 0 24 24"><use href="#ic-target"/></svg></button>
+  <button id="navLive"    onclick="go('live')"    title="Minting now"  aria-label="Minting now"><svg class="i" viewBox="0 0 24 24"><use href="#ic-pulse"/></svg></button>
+  <button id="navAccount" onclick="go('account')" title="Your wallets" aria-label="Your wallets"><svg class="i" viewBox="0 0 24 24"><use href="#ic-wallet"/></svg></button>
+  <button id="navRules"   onclick="go('rules')"   title="Rules"        aria-label="Rules">      <svg class="i" viewBox="0 0 24 24"><use href="#ic-sliders"/></svg></button>
+</nav>
 
 <script>
 'use strict';
-var PAGE_VERSION = '14-budget';
+var PAGE_VERSION = '15-billing';
 
 /* ── state ──────────────────────────────────────────────────────────────── */
 var view='mints', tab='passed', hunting=false, rounds=0, selected=null;
 var hist=null, origin=null, acctView=null, revealed=null, defaults=null, health=null;
+var billing=null, subMsg=null;
 var board=null, boardTimer=null, minting={}, huntTimer=null, boardIdle=0;
 var seenArt=[], logLines=[], busyLabel='', signupNotice=null, statusInfo=null;
 
@@ -278,6 +377,12 @@ function fmtDur(s){ if(s===null||s===undefined||!isFinite(s)) return '—';
   return s<60?Math.round(s)+'s':s<3600?Math.round(s/60)+'m':(s/3600).toFixed(1)+'h'; }
 function fmtTime(iso){ var d=new Date(iso); return isNaN(d.getTime())?'—':d.toLocaleTimeString(); }
 function num(v,cls){ return '<div class="num '+(cls||'l')+'">'+esc(v)+'</div>'; }
+
+/* One icon from the sprite. Takes the colour of whatever it sits in. */
+function ic(name,cls){
+  return '<svg class="i'+(cls?' '+cls:'')+'" viewBox="0 0 24 24" aria-hidden="true">'+
+    '<use href="#ic-'+name+'"/></svg>';
+}
 
 /* ── credentials ────────────────────────────────────────────────────────── */
 function acct(){ try{ return JSON.parse(localStorage.getItem('fm_account')||'null'); }
@@ -376,6 +481,11 @@ async function loadAccount(){
   }
   try{ acctView=await api('/api/account'); }
   catch(e){ acctView={error:e.message}; }
+  // What auto-mint costs and whether this account has paid. Asked alongside
+  // the account rather than only when the user goes looking, so the screen can
+  // say why the switch is not doing anything.
+  try{ billing=await api('/api/subscribe'); }
+  catch(e){ billing={error:e.message}; }
   render();
 }
 
@@ -1412,6 +1522,103 @@ function plainRow(k,v,right){
     (right? '<div class="right"><div class="num m">'+right+'</div></div>':'')+'</div>';
 }
 
+/**
+ * What auto-mint costs, and how to pay for it.
+ *
+ * The whole charge is on one card: the price, the address, the fee on each
+ * mint, and the sentence saying the fee is this app's rather than the chain's.
+ * Nothing about it is folded into a total somewhere else — these are wallets
+ * this app generated and holds the keys to, so the only way the person paying
+ * knows what they are paying is because this screen says so.
+ */
+function renderBilling(){
+  if(!billing) return '';
+  if(billing.error) return '<div class="card flat"><div class="k">Auto-mint</div>'+
+    msg('err',esc(billing.error))+'</div>';
+  if(!billing.billingEnabled) return '';
+
+  var st=billing.status||{}, out=[];
+  out.push('<div class="card">');
+  out.push('<div class="k">Auto-mint subscription</div>');
+
+  if(st.active){
+    out.push('<div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 2px">'+
+      num(st.daysLeft===undefined?'—':st.daysLeft,'xl')+
+      '<div class="num m mute">day'+(st.daysLeft===1?'':'s')+' left</div></div>');
+    out.push('<p class="lede">'+ic('check')+' Paid'+
+      (st.until? ' through '+esc(String(st.until).slice(0,10)) : '')+
+      '. Pay again any time — days are added, not replaced.</p>');
+  }else{
+    out.push('<div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 2px">'+
+      num(billing.priceEth,'xl')+'<div class="num m mute">ETH</div></div>');
+    out.push('<div class="k">for '+esc(billing.days)+' days of auto-mint</div>');
+    out.push('<p class="lede">'+esc(billing.priceNote)+'</p>');
+  }
+
+  out.push('<div class="hint">Free, with or without this: scanning, the live board, '+
+    'and your findings history. This pays for the bot watching and minting for you.</div>');
+
+  // Paying: address, amount, then the hash. Three steps, numbered, because
+  // this is the one flow where a half-finished attempt costs real money.
+  out.push('<details class="card flat" style="margin:14px 0 0"'+(st.active?'':' open')+'>');
+  out.push('<summary>'+(st.active? 'Extend it' : 'Pay from one of your wallets')+'</summary>');
+  out.push('<div style="margin-top:14px">');
+  out.push('<div class="row static"><div class="grow"><div class="k">1 — send exactly</div>'+
+    '<div class="name mono">'+esc(billing.priceEth)+' ETH</div></div></div>');
+  out.push('<div class="row static"><div class="grow"><div class="k">2 — to this address</div>'+
+    '<div class="name mono full">'+esc(billing.payTo)+'</div></div>'+
+    '<div class="right"><button class="icon-only" onclick="copyPayTo()" '+
+      'title="Copy address" aria-label="Copy address">'+ic('copy')+'</button></div></div>');
+  out.push('<div class="hint">Send it from one of the ten wallets above — the payment is '+
+    'matched to your account by the wallet it came from, so one sent from anywhere else '+
+    'cannot be credited to you.</div>');
+  out.push('<div style="margin-top:14px"><label for="payHash">3 — paste the transaction hash</label>'+
+    '<input id="payHash" class="mono" spellcheck="false" placeholder="0x…"></div>');
+  out.push('<div class="acts"><button class="solid glow" onclick="claimPayment()"'+
+    (busyLabel?' disabled':'')+'>'+ic('spark')+'Unlock auto-mint</button>'+
+    '<span class="mute" style="font-size:12px">Checked on-chain — nothing is taken on trust.</span>'+
+    '</div>');
+  if(subMsg) out.push(msg(subMsg.kind,esc(subMsg.text)));
+  out.push('</div></details>');
+
+  // The per-mint fee, in its own words. Never merged into a gas figure: it is
+  // a charge by this app, and calling it anything else would be a lie about
+  // who is charging you.
+  out.push('<div class="card flat" style="margin:12px 0 0">');
+  out.push('<div class="k">Service fee on each mint</div>');
+  out.push('<div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 2px">'+
+    num(billing.feePct+'%','l')+'<div class="mute" style="font-size:13px">of that mint\'s own gas</div></div>');
+  out.push('<div class="hint">Charged only when a mint actually lands, capped at '+
+    esc(billing.feeMaxEth)+' ETH, and sent as its own transaction to '+
+    '<span class="mono">'+esc(shortAddr(billing.payTo))+'</span> so you can check it on the '+
+    'explorer. <b>This is a charge by this app, not a network cost.</b></div>');
+  out.push('</div>');
+
+  out.push('</div>');
+  return out.join('');
+}
+
+async function copyPayTo(){
+  try{ await navigator.clipboard.writeText(billing.payTo); subMsg={kind:'ok',text:'Address copied.'}; }
+  catch(e){ subMsg={kind:'warn',text:'Could not copy — select the address and copy it by hand.'}; }
+  render();
+}
+
+async function claimPayment(){
+  var el=$('payHash'), hash=el? el.value.trim() : '';
+  if(!hash){ subMsg={kind:'warn',text:'Paste the transaction hash of the payment you sent.'}; render(); return; }
+  subMsg=null; busyLabel='Checking the chain'; render();
+  try{
+    billing=await api('/api/subscribe',{method:'POST',body:JSON.stringify({txHash:hash})});
+    subMsg={kind:(billing.status&&billing.status.active)?'ok':'warn',
+      text:billing.note||(billing.status&&billing.status.message)||''};
+  }catch(e){
+    subMsg={kind:'err',text:e.message};
+  }finally{
+    busyLabel=''; render();
+  }
+}
+
 function renderUserAccount(){
   var a=acct(), out=[];
   out.push('<div class="card">');
@@ -1439,12 +1646,19 @@ function renderUserAccount(){
       'holds ETH on this chain. Send gas money to the addresses below.</div>');
   }
 
+  var subbed = !billing || !billing.billingEnabled || (billing.status&&billing.status.active);
+  var on = acctView && acctView.autoMint;
   out.push('<div class="acts">'+
-    '<button class="'+((acctView&&acctView.autoMint)?'solid':'')+'" onclick="toggleAuto('+
-      ((acctView&&acctView.autoMint)?'false':'true')+')">'+
-      ((acctView&&acctView.autoMint)? 'Auto-mint on' : 'Auto-mint off')+'</button>'+
-    '<button onclick="revealKeys()">Show private keys</button></div>');
+    '<button class="'+(on?'solid':'')+'" onclick="toggleAuto('+(on?'false':'true')+')">'+
+      ic(on?'check':'x')+(on? 'Auto-mint on' : 'Auto-mint off')+'</button>'+
+    '<button onclick="revealKeys()">'+ic('key')+'Show private keys</button></div>');
+  // Said here rather than only on the billing card, because this is the switch
+  // people press and then wonder why nothing happened.
+  if(on && !subbed) out.push('<div class="hint">'+
+    'Switched on, but nothing will be minted until the subscription below is paid.</div>');
   out.push('</div>');
+
+  out.push(renderBilling());
 
   // Ten addresses is a wall, and it is not what you came to this screen for.
   // Collapsed by default, with the one number that matters in the summary.
@@ -1452,7 +1666,7 @@ function renderUserAccount(){
   if(!ws.length && acctView && acctView.addresses)
     for(var q=0;q<acctView.addresses.length;q++) ws.push({address:acctView.addresses[q],balanceEth:'—'});
 
-  out.push('<details class="card flat"><summary>Wallet addresses ('+esc(ws.length)+
+  out.push('<details id="walletList" class="card flat"><summary>Wallet addresses ('+esc(ws.length)+
     ') — tap to show</summary>');
   out.push('<div style="margin-top:14px">');
   for(var j=0;j<ws.length;j++){

@@ -17,13 +17,14 @@ the problem to a new account.
 
 Vercel bills Fluid **Active CPU** — a function that is *awaiting* something is
 billed for every second it waits, not just for the milliseconds it spends
-computing. This app's two most-used screens each open a WebSocket to the
-sequencer feed and hold it:
+computing. Three request paths in this app opened a WebSocket to the sequencer
+feed and held it:
 
-| Screen | Window held open | Poll interval | Duty cycle |
+| Path | Window held open | Poll interval | Duty cycle |
 | --- | --- | --- | --- |
 | Live board | `windowSec` = 6s | 45s | ~13% |
 | Hunt cycle | `HUNT_WINDOW_SEC` = 15s | 45s | ~33% |
+| `/api/scan` | 3–55s, per request | on demand | spiky |
 
 Roughly **46% of wall-clock time billed as active CPU, per open tab**. One
 browser left open overnight is about 4.5 hours of billed CPU. That is where 10
@@ -34,10 +35,17 @@ A machine that stays on holds that same feed for free, because the connection
 is open anyway. So the fix is not "use less CPU on Vercel", it is **"do the
 listening somewhere else and let Vercel read the answer"**.
 
-That is what `TRACKER_UPSTREAM_URL` now does. Set it, and `runHuntCycle` and
-`runLiveBoard` fetch a ranked snapshot over HTTP instead of opening a feed
-(`src/snapshot.ts`). Duty cycle drops from ~46% to the milliseconds of one
-request.
+That is what `TRACKER_UPSTREAM_URL` now does. Set it, and all three — the hunt
+cycle, the live board and `/api/scan` — fetch a ranked snapshot over HTTP
+instead of opening a feed (`src/snapshot.ts`). Duty cycle drops from ~46% to
+the milliseconds of one request.
+
+Nothing else in a Vercel function opens a feed. The bot's `feed` trigger cannot
+be reached from the API — `buildEnv` forces `TRIGGER_MODE=now`, because a
+function cannot outlive its request anyway — and the autopilot is CLI-only. A
+test in `test/snapshot.test.ts` asserts none of the three request paths ever
+constructs a `FeedConsumer` again, because re-adding one would work perfectly
+and quietly bring the bill back.
 
 **If you skip Part 3, expect the new Vercel account to be paused too.**
 
@@ -59,7 +67,7 @@ network allowance to matter.
 | **Google Cloud always-free** | 1× e2-micro (1 GB RAM) in `us-west1`/`us-central1`/`us-east1`, 30 GB disk, **1 GB/month egress from North America** | Works, but see the egress maths below — the free tier's cap is the problem, not the VM |
 | **Render free tier** | Web services only, sleeps after ~15 min idle | **Fatal.** A sleeping process drops the WebSocket. That is the one thing this host exists to hold |
 | **Railway / Heroku** | Trial credit, then paid | Not a free tier any more |
-| **AWS EC2 free tier** | 12 months, then billed | Fine for a year, then it becomes the same problem you are leaving |
+| **AWS EC2** | 12 months of `t3.micro`, or credits on newer accounts | Works well, and best if you are already on AWS — but it does eventually bill. See below |
 | **Cloudflare Workers** | Generous, but no long-lived outbound WebSocket on the standard runtime | Would need a Durable Objects rewrite. Not worth it |
 
 Free tiers change constantly — check the current limits before you commit;
@@ -94,6 +102,71 @@ tuning the product around a free tier instead of picking a better free tier.
 - **Two firewalls.** Oracle's Ubuntu images ship with local iptables rules *and*
   a VCN security list. Opening a port means doing both. The Cloudflare Tunnel
   option below avoids both.
+
+### On AWS specifically
+
+If you are already on AWS, use AWS — one provider to reason about beats saving
+nothing on a second one. Two things to know before you start.
+
+**The free tier is not permanent.** The classic 12-month `t2.micro`/`t3.micro`
+allowance expires, and newer accounts get a credit-based free tier instead of a
+perpetual one. Either way this box eventually bills. It is small — a
+`t4g.small` on a 1-year Savings Plan is a few dollars a month — but budget for
+it rather than being surprised. Set a Billing alarm on day one.
+
+**Pick Graviton.** `t4g.small` (2 vCPU, 2 GB, ARM) is the sweet spot: cheaper
+than the x86 equivalent and more than this needs. `t4g.micro` (1 GB) also works.
+The Docker image builds for arm64, so nothing changes.
+
+Launch it:
+
+| Setting | Value |
+| --- | --- |
+| AMI | Ubuntu Server 24.04 LTS (**arm64**, to match `t4g`) |
+| Instance type | `t4g.small` |
+| Storage | 20 GB gp3 |
+| Key pair | one you keep — there is no password login |
+| Security group | see below |
+
+**Security group: SSH only.** Inbound `22/tcp` from *your* IP, nothing else.
+Not `0.0.0.0/0`, and not port 8080 — the tracker is reached over a tunnel or
+behind TLS, neither of which needs an open port for the app itself. Outbound:
+leave the default allow-all; the sequencer feed is an outbound WebSocket.
+
+Then either paste this as **User data** at launch, or run it after SSHing in:
+
+```bash
+#!/bin/bash
+set -eux
+apt-get update && apt-get install -y git
+cd /opt
+git clone https://github.com/<new-account>/NFTmint.git nftmint-src
+cd nftmint-src
+./deploy/setup-vps.sh
+```
+
+Give it a few minutes, then SSH in and check:
+
+```bash
+ssh -i your-key.pem ubuntu@<public-ip>
+sudo journalctl -u nftmint-tracker -f
+sudo grep TRACKER_AUTH_TOKEN /opt/nftmint/.env
+curl -H "Authorization: Bearer <that token>" http://127.0.0.1:8080/api/health
+```
+
+**Give it an Elastic IP** if you are going the TLS-and-domain route: a stopped
+and restarted instance gets a new public IP otherwise, and your DNS record goes
+stale at the worst time. An Elastic IP attached to a running instance is free.
+With a Cloudflare Tunnel you do not need one at all.
+
+**Egress**, since that decided Oracle vs GCP above: AWS gives 100 GB/month free
+across the account and charges about $0.09/GB after. The ~2.3 GB/month this
+polling costs is inside the free allowance and would be about 20¢ if it were
+not.
+
+If you would rather not manage a VM at all, **App Runner** or a **Fargate**
+task runs the same image with no host to patch — but neither has a free tier,
+so it is a convenience purchase, not a saving.
 
 ### The caveat that would change this answer
 
@@ -400,6 +473,7 @@ Never rotate:
 - [ ] `TRACKER_UPSTREAM_URL` and `TRACKER_UPSTREAM_TOKEN` set
 - [ ] `API_TOKEN` and the RPC key rotated
 - [ ] Live board reports `"source": "upstream"` and `"sampledSeconds": 0`
+- [ ] `/api/scan` reports the same
 
 **Data**
 - [ ] Same Upstash database re-pointed, **or** exported and imported
