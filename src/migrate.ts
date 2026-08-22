@@ -23,7 +23,9 @@ import { openHash, resetKv, type StoreKind } from './kv.js';
  *   could KEYS its way through a shared database, but that would also sweep up
  *   rows belonging to other apps sharing the prefix. Instead the namespace list
  *   is derived from the data itself: accounts first, then one findings
- *   namespace per account, plus the operator's own.
+ *   namespace per account, plus the operator's own — and the settings the
+ *   operator has changed, which would otherwise silently revert to whatever the
+ *   new host's environment happens to say.
  */
 
 /** What a backup file contains. Versioned so a future format can be detected. */
@@ -78,7 +80,10 @@ const FINDINGS_TTL_SEC = 60 * 60 * 24 * 30;
 const LIVE_TTL_SEC = 15 * 60;
 
 function ttlFor(namespace: string): number {
-  if (namespace === 'accounts') return NO_EXPIRY;
+  // Settings and accounts both hold things that must not quietly expire: a
+  // price that reverted to the default on a timer would start charging the
+  // wrong amount with nobody told.
+  if (namespace === 'accounts' || namespace === 'settings') return NO_EXPIRY;
   if (namespace === 'live' || namespace.startsWith('live-')) return LIVE_TTL_SEC;
   return FINDINGS_TTL_SEC;
 }
@@ -93,7 +98,7 @@ export async function discoverNamespaces(
   env: NodeJS.ProcessEnv,
   options: ExportOptions = {},
 ): Promise<string[]> {
-  const names = ['accounts', 'findings'];
+  const names = ['accounts', 'settings', 'findings'];
   if (options.includeLive) names.push('live');
 
   for (const [id] of await openHash('accounts', env, NO_EXPIRY).entries()) {

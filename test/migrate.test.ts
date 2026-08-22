@@ -94,6 +94,26 @@ describe('discovering what there is to move', () => {
     expect(await discoverNamespaces(source, { includeLive: true })).toContain(`live-${id}`);
   });
 
+  it('carries the prices the operator set, so they do not revert on the new host', async () => {
+    // Pricing lives in the store, not the environment. Left behind, the new
+    // host quietly falls back to its own defaults and starts charging a
+    // different amount with nobody told.
+    const { saveBilling } = await import('../src/billing.js');
+    await saveBilling({ feePct: 3, subscriptionEth: '0.02' }, source);
+    resetKv();
+
+    const backup = await exportData(source);
+    await importData(backup, destination);
+    resetKv();
+
+    const { loadBilling } = await import('../src/billing.js');
+    const moved = await loadBilling(destination);
+
+    expect(backup.namespaces.settings).toBeDefined();
+    expect(moved.feePct).toBe(3);
+    expect(moved.subscriptionWei).toBe(10n ** 16n * 2n);
+  });
+
   it('omits namespaces that hold nothing', async () => {
     const backup = await exportData(source);
 
