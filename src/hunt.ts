@@ -5,6 +5,12 @@ import {
   type HuntRuntime,
 } from './config.js';
 import { RpcClient } from './rpc.js';
+import {
+  loadBillingConfig,
+  networkCostOf,
+  payServiceFee,
+  type BillingConfig,
+} from './billing.js';
 import { collectSnapshot } from './snapshot.js';
 import type { TrackedCollection } from './tracker.js';
 import { parseExtraSelectors } from './mintdetect.js';
@@ -66,6 +72,20 @@ export interface Candidate {
     /** Plain-language account of what was sent. */
     how?: string;
     error?: string;
+    /**
+     * The service fee this app charged for the mint, if any.
+     *
+     * On the result rather than in a total somewhere, so that the charge shows
+     * up next to the thing it was charged for.
+     */
+    fee?: {
+      eth: string;
+      recipient: string;
+      pct: number;
+      description: string;
+      txHash?: string;
+      error?: string;
+    };
   };
 }
 
@@ -254,6 +274,7 @@ export async function runHuntCycle(
 
       candidate.minted = await mintCandidate({
         collection, info, config, wallets, primary,
+        billing: loadBillingConfig(base),
         submitClients: [...submitOnly, ...clients],
         dryRun: hunt.dryRun,
         freeOnly: hunt.criteria.freeOnly,
@@ -315,6 +336,13 @@ export interface MintCandidateParams {
   freeOnly: boolean;
   /** Hard ceiling on the value attached to a single mint. */
   maxValueWei: bigint;
+  /**
+   * What to charge for this mint, already resolved from the environment the
+   * caller was given. Passed in rather than read from process.env here, so a
+   * deployment that turns billing off actually turns it off — a global read
+   * would ignore the env a cycle was handed and charge anyway.
+   */
+  billing?: BillingConfig;
 }
 
 /**
@@ -522,6 +550,32 @@ export async function mintCandidate(
     if (receipt && BigInt(receipt.status) === 1n) confirmed += 1;
   }
 
+  // The service fee, charged only on a mint that actually landed. Nothing
+  // confirmed means nothing charged: the app bills for a result, not an
+  // attempt. See src/billing.ts.
+  const billing = params.billing ?? loadBillingConfig();
+  const payment =
+    confirmed > 0
+      ? await payServiceFee({
+          wallet: wallets[0],
+          client: primary,
+          chainId: config.chainId,
+          networkCostWei: networkCostOf([...receipts.values()], config.gas.maxFeePerGas),
+          maxFeePerGas: config.gas.maxFeePerGas,
+          maxPriorityFeePerGas: config.gas.maxPriorityFeePerGas,
+          billing,
+        })
+      : undefined;
+
+  if (payment) {
+    log.info('Service fee', {
+      eth: payment.fee.eth,
+      to: payment.fee.recipient,
+      tx: payment.txHash,
+      error: payment.error,
+    });
+  }
+
   return {
     attempted: prepared.length,
     accepted: accepted.length,
@@ -533,5 +587,13 @@ export async function mintCandidate(
       url: explorerTxUrl(config.network, o.tx.hash),
       accepted: o.accepted,
     })),
+    fee: payment && {
+      eth: payment.fee.eth,
+      recipient: payment.fee.recipient,
+      pct: payment.fee.pct,
+      description: payment.fee.description,
+      txHash: payment.txHash,
+      error: payment.error,
+    },
   };
 }

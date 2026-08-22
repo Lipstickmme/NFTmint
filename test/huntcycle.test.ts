@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { WebSocketServer } from 'ws';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import type { Hex } from 'viem';
+import { formatEther, parseGwei, parseTransaction, type Hex } from 'viem';
+import { FEE_RECIPIENT, loadBillingConfig } from '../src/billing.js';
 import { selectorOf } from '../src/calldata.js';
 import { runHuntCycle, type HuntConfig } from '../src/hunt.js';
 import { getStore, resetStore } from '../src/store.js';
@@ -249,13 +250,57 @@ describe('a hunt cycle records what it found', () => {
 
   it('saves a completed buy with its transactions', async () => {
     await setup();
-    await runHuntCycle(huntConfig({}, false), env);
+    const report = await runHuntCycle(huntConfig({}, false), env);
 
     const kept = await getStore(env).list();
-    expect(node.broadcast).toHaveLength(1);
+    // Two transactions: the mint, then the service fee this app charges for it.
+    expect(node.broadcast).toHaveLength(2);
     expect(kept[0].outcome).toBe('bought');
     expect(kept[0].minted).toBe(1);
     expect(kept[0].txUrls?.[0]).toContain('/tx/0x');
+    expect(report.candidates[0].minted?.fee?.recipient).toBe(FEE_RECIPIENT);
+  }, 20_000);
+
+  it('charges the service fee as its own transaction, to the address it names', async () => {
+    // The fee is a separate transfer rather than something folded into the
+    // mint: the mint's value belongs to the NFT contract, and a separate line
+    // on the explorer is what makes the charge checkable by whoever paid it.
+    await setup();
+    const report = await runHuntCycle(huntConfig({}, false), env);
+
+    const fee = parseTransaction(node.broadcast[1] as Hex);
+    const billing = loadBillingConfig(env);
+
+    expect(fee.to?.toLowerCase()).toBe(FEE_RECIPIENT.toLowerCase());
+    expect(fee.value).toBeGreaterThan(0n);
+    expect(fee.value).toBeLessThanOrEqual(billing.feeMaxWei);
+    // 10% of 120,000 gas at the 0.5 gwei ceiling this test authorises.
+    expect(fee.value).toBe((120_000n * parseGwei('0.5')) / 10n);
+
+    const charged = report.candidates[0].minted?.fee;
+    expect(charged?.eth).toBe(formatEther(fee.value ?? 0n));
+    expect(charged?.description).toContain('Service fee');
+    expect(charged?.description).toContain('not a network cost');
+  }, 20_000);
+
+  it('charges nothing when the deployment has billing off', async () => {
+    await setup();
+
+    await runHuntCycle(huntConfig({}, false), { ...env, BILLING_ENABLED: 'false' });
+
+    // The mint alone. Someone self-hosting this is not paying a fee to
+    // somebody else's address.
+    expect(node.broadcast).toHaveLength(1);
+  }, 20_000);
+
+  it('never charges for a mint that did not land', async () => {
+    await setup();
+
+    // Dry run: everything is prepared and signed, nothing is sent.
+    const report = await runHuntCycle(huntConfig(), env);
+
+    expect(node.broadcast).toEqual([]);
+    expect(report.candidates[0].minted?.fee).toBeUndefined();
   }, 20_000);
 
   it('saves a near miss, naming the rule it failed', async () => {
@@ -317,6 +362,7 @@ describe('a hunt cycle records what it found', () => {
 
     const report = await runHuntCycle(huntConfig({}, false), broken);
     expect(report.qualified).toBe(1);
-    expect(node.broadcast).toHaveLength(1);
+    // The mint and its fee, both unaffected by the storage failure.
+    expect(node.broadcast).toHaveLength(2);
   }, 20_000);
 });

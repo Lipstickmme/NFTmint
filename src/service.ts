@@ -12,8 +12,8 @@ import { loadWallets, checkBalances } from './wallet.js';
 import { runPreflight } from './preflight.js';
 import { totalCommitment } from './presign.js';
 import { run } from './bot.js';
-import { FeedConsumer } from './feed.js';
-import { MintTracker, type TrackedCollection } from './tracker.js';
+import { collectSnapshot } from './snapshot.js';
+import type { TrackedCollection } from './tracker.js';
 import { parseExtraSelectors } from './mintdetect.js';
 import { criteriaForDisplay } from './hunt.js';
 import { errorMessage } from './http.js';
@@ -330,6 +330,8 @@ export interface ScanResult {
   stats: Record<string, unknown>;
   collections: TrackedCollection[];
   note: string;
+  /** Whether a persistent tracker answered, or this request sampled the feed. */
+  source: 'upstream' | 'feed';
 }
 
 /**
@@ -347,41 +349,40 @@ export async function scanFeedService(
   const cfg = loadTrackerConfig(base);
   const windowSec = Math.min(Math.max(seconds, 3), 55);
 
-  const tracker = new MintTracker({
-    velocityWindowSec: cfg.velocityWindowSec,
-    minAttempts: cfg.minAttempts,
-    minUniqueMinters: cfg.minUniqueMinters,
-    maxContractAgeSec: cfg.maxContractAgeSec,
-    freeOnly: false,
-    // Sender recovery is too slow to be worth it inside a short sample window.
-    trackUniqueMinters: false,
-    maxContracts: cfg.maxContracts,
-    evictAfterSec: cfg.evictAfterSec,
-    extraSelectors: parseExtraSelectors(cfg.extraSelectorsRaw),
-  });
+  const sampled = await collectSnapshot(
+    {
+      windowSec,
+      limit: 50,
+      tracker: {
+        velocityWindowSec: cfg.velocityWindowSec,
+        minAttempts: cfg.minAttempts,
+        minUniqueMinters: cfg.minUniqueMinters,
+        maxContractAgeSec: cfg.maxContractAgeSec,
+        freeOnly: false,
+        // Sender recovery is too slow to be worth it inside a short sample window.
+        trackUniqueMinters: false,
+        maxContracts: cfg.maxContracts,
+        evictAfterSec: cfg.evictAfterSec,
+        extraSelectors: parseExtraSelectors(cfg.extraSelectorsRaw),
+      },
+    },
+    base,
+  );
 
-  const feed = new FeedConsumer({ url: cfg.feedUrl });
-  let connected = false;
-  feed.on('open', () => {
-    connected = true;
-  });
-  feed.on('error', () => {
-    /* logged by the consumer; sampling continues and may reconnect */
-  });
-  feed.on('tx', (tx, msg) => tracker.ingest(tx, msg?.sequenceNumber));
-  feed.start();
-
-  await new Promise((resolve) => setTimeout(resolve, windowSec * 1000));
-  feed.stop();
-
+  const fromTracker = sampled.source === 'upstream';
   return {
-    sampledSeconds: windowSec,
-    feedUrl: cfg.feedUrl,
-    connected,
-    stats: tracker.stats(),
-    collections: tracker.snapshot(50),
-    note: connected
-      ? 'Snapshot of a single sample window. A continuously running tracker sees more.'
-      : 'Could not connect to the sequencer feed within the window.',
+    // Zero when a tracker answered: this request held no socket open, which is
+    // the whole reason for having one.
+    sampledSeconds: fromTracker ? 0 : windowSec,
+    feedUrl: fromTracker ? (sampled.upstream?.url ?? cfg.feedUrl) : cfg.feedUrl,
+    connected: sampled.feedConnected,
+    source: sampled.source,
+    stats: sampled.observed,
+    collections: sampled.collections,
+    note: !sampled.feedConnected
+      ? 'Could not connect to the sequencer feed within the window.'
+      : fromTracker
+        ? 'From a tracker that has been watching continuously — not a single sample window.'
+        : 'Snapshot of a single sample window. A continuously running tracker sees more.',
   };
 }

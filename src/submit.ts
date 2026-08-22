@@ -118,6 +118,12 @@ export interface Receipt {
   blockNumber: Hex;
   status: Hex;
   gasUsed: Hex;
+  /**
+   * What the chain actually charged per unit of gas. Optional because not
+   * every node reports it; without it, the fee falls back to the fee that was
+   * authorised, which errs high rather than in the operator's favour.
+   */
+  effectiveGasPrice?: Hex;
 }
 
 /**

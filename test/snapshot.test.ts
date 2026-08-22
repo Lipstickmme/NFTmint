@@ -184,3 +184,35 @@ describe('with no tracker configured', () => {
     expect(upstreamConfigured({ TRACKER_UPSTREAM_URL: 'https://tracker.example.com' })).toBe(true);
   });
 });
+
+describe('nothing in a serverless request opens its own feed', () => {
+  /**
+   * A structural guard, not a behavioural one.
+   *
+   * Every module here runs inside a Vercel function, where holding a WebSocket
+   * is billed as active CPU for the whole wait. Three of them used to open one
+   * directly, and between them that was ~46% duty cycle per open tab — the
+   * thing that paused the account. Routing them through collectSnapshot is what
+   * lets a tracker absorb it, and a future `new FeedConsumer(...)` added back
+   * into any of them would silently undo that: everything would still work, and
+   * the bill would come back.
+   */
+  const REQUEST_PATH_MODULES = ['hunt.ts', 'live.ts', 'service.ts'];
+
+  it.each(REQUEST_PATH_MODULES)('%s goes through collectSnapshot', async (file) => {
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(new URL(`../src/${file}`, import.meta.url), 'utf8');
+
+    expect(source).not.toMatch(/new FeedConsumer/);
+    expect(source).toContain('collectSnapshot');
+  });
+
+  it('leaves the always-on paths alone', async () => {
+    // The CLI is the persistent host: there, holding the feed open is the
+    // entire point and costs nothing extra.
+    const { readFile } = await import('node:fs/promises');
+    const cli = await readFile(new URL('../src/cli.ts', import.meta.url), 'utf8');
+
+    expect(cli).toMatch(/new FeedConsumer/);
+  });
+});

@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
+import type { Subscription } from './billing.js';
 import { isIP } from 'node:net';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import type { Address, Hex } from 'viem';
@@ -53,6 +54,14 @@ export interface Account {
   rpcUrl?: string;
   /** Auto-mint on or off for this account. */
   autoMint: boolean;
+  /**
+   * The paid period that lets auto-mint actually run.
+   *
+   * Absent until the account pays. Scanning, the live board and manual mints
+   * never consult this — they are free, and gating them would be gating the
+   * part that costs nothing to serve.
+   */
+  subscription?: Subscription;
 }
 
 /** What the API returns: never a sealed blob, never a private key. */
@@ -63,6 +72,8 @@ export interface AccountView {
   addresses: Address[];
   rpcUrl?: string;
   autoMint: boolean;
+  /** When the paid period ends, when there is one. */
+  subscribedUntil?: string;
 }
 
 export function toView(account: Account): AccountView {
@@ -73,6 +84,7 @@ export function toView(account: Account): AccountView {
     addresses: account.wallets.map((w) => w.address),
     rpcUrl: account.rpcUrl,
     autoMint: account.autoMint,
+    subscribedUntil: account.subscription?.until,
   };
 }
 

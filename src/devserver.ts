@@ -32,6 +32,7 @@ const ROUTES: Record<string, () => Promise<{ default: Handler }>> = {
   '/api/collections': () => import('./routes/collections.js') as Promise<{ default: Handler }>,
   '/api/findings': () => import('./routes/findings.js') as Promise<{ default: Handler }>,
   '/api/account': () => import('./routes/account.js') as Promise<{ default: Handler }>,
+  '/api/subscribe': () => import('./routes/subscribe.js') as Promise<{ default: Handler }>,
   '/api/origin': () => import('./routes/origin.js') as Promise<{ default: Handler }>,
   '/api/live': () => import('./routes/live.js') as Promise<{ default: Handler }>,
   '/api/mintnow': () => import('./routes/mintnow.js') as Promise<{ default: Handler }>,

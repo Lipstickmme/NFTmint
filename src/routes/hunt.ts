@@ -6,6 +6,7 @@ import type { HuntIdentity } from '../hunt.js';
 import { mergeCriteria } from '../criteria.js';
 import { withSingleFlight } from '../ratelimit.js';
 import { authenticateAccount } from '../accountstore.js';
+import { loadBillingConfig, subscriptionStatus } from '../billing.js';
 import { privateKeysOf } from '../accounts.js';
 
 /**
@@ -38,19 +39,31 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     let identity: HuntIdentity;
     try {
       const account = await authenticateAccount(accountId, accountToken);
-      if (!account.autoMint) {
+
+      // Two ways this round does not happen: the account switched auto-mint
+      // off, or it has not paid for it. Both answer 200 with an explanation
+      // rather than an error, because neither is a fault — the page polls this
+      // endpoint on a loop and a red error every 45 seconds would be noise.
+      const billing = loadBillingConfig();
+      const subscription = subscriptionStatus(account.subscription, billing);
+      if (!account.autoMint || !subscription.active) {
+        const paused = !account.autoMint;
         res.setHeader('content-type', 'application/json');
         res.status(200).send(
           jsonSafe({
             paused: true,
-            reason: 'Auto-mint is off for this account. Turn it on to start hunting.',
+            needsSubscription: !subscription.active,
+            subscription,
+            reason: paused
+              ? 'Auto-mint is off for this account. Turn it on to start hunting.'
+              : subscription.message,
             candidates: [],
             qualified: 0,
             mintedCollections: 0,
             observed: { feedTxSeen: 0, mintsSeen: 0, contractsTracked: 0 },
             feedConnected: false,
             dryRun: true,
-            note: 'Auto-mint is paused.',
+            note: paused ? 'Auto-mint is paused.' : 'Auto-mint needs a subscription.',
           }),
         );
         return;
